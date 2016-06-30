@@ -5,7 +5,13 @@
 
 #include <boost/test/unit_test.hpp>
 
-BOOST_AUTO_TEST_SUITE(TestIocContainer)
+class Fixture
+{
+public:
+    IocContainer iocContainer;
+};
+
+BOOST_FIXTURE_TEST_SUITE(TestIocContainer, Fixture)
 
 using namespace cppinvert;
 using namespace std;
@@ -24,7 +30,6 @@ BOOST_AUTO_TEST_CASE(checkUnnamedConstruction)
     const char* v3 = "HELLO";
     string v4 = "GOODBYE";
 
-    IocContainer iocContainer;
     iocContainer.bindInstance(v1)
                 .bindInstance(v2)
                 .bindInstance(v3)
@@ -44,7 +49,6 @@ BOOST_AUTO_TEST_CASE(checkUnnamedConstruction)
 
 BOOST_AUTO_TEST_CASE(checkSubContainerConstruction)
 {
-    IocContainer iocContainer;
     IocContainer subContainer1;
     IocContainer subContainer2;
     IocContainer subContainer3;
@@ -74,7 +78,6 @@ BOOST_AUTO_TEST_CASE(testIocContainerInThread)
     static const size_t port = 9999;
 
     IocContainer subIocContainer;
-    IocContainer iocContainer;
     iocContainer.bindInstance(testFactory, ref(subIocContainer));
     subIocContainer.bindInstance("ip", ip).
         bindInstance("port", port);
@@ -98,7 +101,6 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactory)
 {
     std::string str;
 
-    IocContainer iocContainer;
     iocContainer.getRef<IocContainer>("sub1").
         bindInstance<int>("3", 3).
         bindInstance<char>("a", 'a').
@@ -136,7 +138,6 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryMultiples)
     class SomethingElse : virtual public ISomething
     {};
 
-    IocContainer iocContainer;
     IocContainer::Factory<ISomething> factory = []() { return std::unique_ptr<ISomething>(new SomethingElse()); };
     iocContainer.registerFactory<ISomething>(factory);
 
@@ -181,7 +182,6 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryTemplateParameterPack)
         int m_y;
     };
 
-    IocContainer iocContainer;
     IocContainer::Factory<IObject, int, int> factory =
         [](int x, int y) { return std::unique_ptr<IObject>(new Point(x, y)); };
     iocContainer.registerFactory<IObject>(factory);
@@ -193,6 +193,52 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryTemplateParameterPack)
     BOOST_CHECK_EQUAL(p.m_x, 3);
     BOOST_CHECK_EQUAL(p.m_y, 4);
     BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+}
+
+BOOST_AUTO_TEST_CASE(testSubContainerRetrieval)
+{
+    static const char* uuid("TcpConnection");
+    static const std::string uuid2(uuid);
+    static const std::string ip("127.0.0.1");
+    static const std::size_t port(9999);
+
+    iocContainer.getRef<IocContainer>(uuid).
+        bindInstance<std::string>("ip", ip).
+        bindInstance<std::size_t>("port", port);
+
+    IocContainer& subIocContainer = iocContainer.getRef<IocContainer>(uuid2);
+
+    std::string retrievedIp = subIocContainer.get<std::string>("ip");
+    std::size_t retrievedPort = subIocContainer.get<std::size_t>("port");
+
+    BOOST_CHECK_EQUAL(retrievedIp, ip);
+    BOOST_CHECK_EQUAL(retrievedPort, port);
+}
+
+BOOST_AUTO_TEST_CASE(testBindInstanceAndThenEraseInstance)
+{
+    auto v1 = 3.f;
+    auto v2 = 9.9;
+    const char* v3 = "HELLO";
+    string v4 = "GOODBYE";
+
+    iocContainer.bindInstance(v1)
+                .bindInstance(v2)
+                .bindInstance(v3)
+                .bindInstance(v4);
+
+    BOOST_CHECK_EQUAL(iocContainer.size(), 4);
+    BOOST_CHECK(iocContainer.contains<float>());
+    BOOST_CHECK(iocContainer.contains<double>());
+    BOOST_CHECK(iocContainer.contains<const char>());
+    BOOST_CHECK(iocContainer.contains<string>());
+
+    iocContainer.eraseInstance<const char>();
+
+    BOOST_CHECK_EQUAL(v1, iocContainer.get<float>());
+    BOOST_CHECK_EQUAL(v2, iocContainer.get<double>());
+    BOOST_CHECK(!iocContainer.contains<const char>());
+    BOOST_CHECK_EQUAL(v4, iocContainer.get<string>());
 }
 
 //----------------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include <iosfwd>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -292,6 +292,46 @@ public:
         return *this;
     }
 
+    /// Utility method to erase an existing instance from the container.
+    /// @tparam T The type of the instance.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    IocContainer& eraseInstance()
+    {
+        return eraseInstance<T>("");
+    }
+
+    /// Utility method to erase an existing instance from the container.
+    /// @tparam T The type of the instance.
+    /// @param[in] name The name of the instance.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    IocContainer& eraseInstance(const std::string& name)
+    {
+        Lock lock(m_mutex);
+
+        const char* typeName = getType<T>();
+        auto iter = m_registeredInstances.find(typeName);
+
+        if (iter != m_registeredInstances.end())
+        {
+            auto innerIter = iter->second.find(name);
+            if (innerIter != iter->second.end())
+            {
+                iter->second.erase(innerIter);
+
+                // If we have no elements left, we might as well
+                // clean up by also removing the outer container.
+                if (iter->second.size() == 0)
+                {
+                    m_registeredInstances.erase(iter);
+                }
+            }
+        }
+
+        return *this;
+    }
+
     /// Creates an instance using a registered factory.
     /// @tparam T The type of the instance.
     /// @returns Reference to the IocContainer, for chaining operations.
@@ -481,6 +521,16 @@ public:
     std::shared_ptr<T> getShared(const std::string& name) const
     {
         return boost::any_cast<HolderPtr<T>>(getInternal<T>(name));
+    }
+
+    // Retrieve a static constant instance of this object for cases where we are calling through
+    // to an IOC container, but have nothing to put in it. This will ensure the correct
+    // object lifetime.
+    static const IocContainer& emptyContainer()
+    {
+        static const IocContainer empty;
+
+        return empty;
     }
 
 private:
