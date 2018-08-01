@@ -6,8 +6,7 @@ project (cppinvert_test)
 
 include(build/BoostTestHelpers.cmake)
 
-include_directories(include)
-#add_subdirectory (src) 
+#include_directories(cppinvert)
 enable_testing ()
 add_subdirectory (test)
 

@@ -8,19 +8,19 @@
 #include <unordered_map>
 
 #include <boost/any.hpp>
-#include <boost/format.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/core/null_deleter.hpp>
 #include <boost/exception/all.hpp>
+#include <boost/format.hpp>
 #include <boost/throw_exception.hpp>
 
-namespace cppinvert 
+namespace cppinvert
 {
 
 typedef boost::error_info<struct tag_errmsg, std::string> StringInfo;
 
-/// A custom exception, so it's easier to track exceptions that are due to errors from the IOC
-/// container.
+/// A custom exception, so it's easier to track exceptions that are due to errors from the
+/// IOC container.
 class IocException : virtual public boost::exception, virtual public std::exception
 {
 public:
@@ -32,45 +32,43 @@ public:
 
 /// @brief Implementation of an IOC container for C++ code.
 ///
-/// A container that supports holding any type of object, as well as managing the specified lifetime.
-/// In addition, it can create objects if you register the appropriate factory with it.
-/// Note: The IOC container is also thread-safe.
+/// A container that supports holding any type of object, as well as managing the
+/// specified lifetime. In addition, it can create objects if you register the appropriate
+/// factory with it. Note: The IOC container is also thread-safe.
 class IocContainer : private boost::noncopyable
 {
 public:
     /// Definition for a factory function for creating objects.
-    template <class T, class ... TArgs>
-    using Factory = std::function<std::unique_ptr<T> (TArgs...)>;
+    template <class T, class... TArgs>
+    using Factory = std::function<std::unique_ptr<T>(TArgs...)>;
 
     /// Creates the IOC container and also defaults to registering a factory of an
     /// IOC container, so that sub-containers may be created upon request.
-    IocContainer() :
-        m_parent(nullptr),
-        m_registeredFactories(),
-        m_registeredInstances(),
-        m_mutex()
+    IocContainer()
+        : m_parent(nullptr)
+        , m_registeredFactories()
+        , m_registeredInstances()
+        , m_mutex()
     {
         // By default, bind a factory any time an IOC container is requested.
-        Factory<IocContainer> factoryFunc =
-            [this]()
-            {
-                // Reference parent for factories.
-                std::unique_ptr<IocContainer> container(new IocContainer());
-                container->m_parent = this;
+        Factory<IocContainer> factoryFunc = [this]() {
+            // Reference parent for factories.
+            std::unique_ptr<IocContainer> container(new IocContainer());
+            container->m_parent = this;
 
-                return container;
-            };
+            return container;
+        };
 
         registerFactory<IocContainer>(factoryFunc);
     }
 
     /// Move constructor.
     /// @param other The IOC container to take resources from.
-    IocContainer(IocContainer&& other) :
-        m_parent(std::move(other.m_parent)),
-        m_registeredFactories(std::move(other.m_registeredFactories)),
-        m_registeredInstances(std::move(other.m_registeredInstances)),
-        m_mutex()
+    IocContainer(IocContainer&& other)
+        : m_parent(std::move(other.m_parent))
+        , m_registeredFactories(std::move(other.m_registeredFactories))
+        , m_registeredInstances(std::move(other.m_registeredInstances))
+        , m_mutex()
     {
     }
 
@@ -93,14 +91,16 @@ public:
         return *this;
     }
 
-    /// Return the size of the container. In this context, the size means the number of instances
-    /// that are held in the container.
-    /// @param[in] recursive Provides a mechanism for counting the number of instances in all subcontainers,
-    /// as well.
+    /// Return the size of the container. In this context, the size means the number of
+    /// instances that are held in the container.
+    /// @param[in] recursive Provides a mechanism for counting the number of instances in
+    /// all subcontainers, as well.
     /// @returns The calculated size.
-    /// NOTE: This calculation has a caveat. While the parent IOC container is locked, if you are doing
-    ///     the recursive case, those will only be locked when they individually count their size, and so
-    ///     on, so it's possible that the count will not be an exact snapshot for that moment in time.
+    /// NOTE: This calculation has a caveat. While the parent IOC container is locked, if
+    /// you are doing
+    ///     the recursive case, those will only be locked when they individually count
+    ///     their size, and so on, so it's possible that the count will not be an exact
+    ///     snapshot for that moment in time.
     std::size_t size(bool recursive = false) const
     {
         Lock lock(m_mutex);
@@ -122,7 +122,7 @@ public:
 
                 for (const auto& mapPair : innerMap)
                 {
-                    auto item = boost::any_cast<HolderPtr<IocContainer> >(mapPair.second);
+                    auto item = boost::any_cast<HolderPtr<IocContainer>>(mapPair.second);
                     size += item->size(recursive);
                 }
             }
@@ -131,7 +131,8 @@ public:
         return size;
     }
 
-    /// Registers a default factory function for a given type. It implicitly does new T() to create the type.
+    /// Registers a default factory function for a given type. It implicitly does new T()
+    /// to create the type.
     /// @tparam T The type of the instance that will be created.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
@@ -140,7 +141,8 @@ public:
         return registerDefaultFactory<T, T>();
     }
 
-    /// Registers a default factory function for a given type. It implicitly does new T() to create the type.
+    /// Registers a default factory function for a given type. It implicitly does new T()
+    /// to create the type.
     /// @tparam T The type of the instance that will be created.
     /// @tparam TConcrete The type of the concrete instance that will be created.
     /// @returns Reference to the IocContainer, for chaining operations.
@@ -150,8 +152,8 @@ public:
         Lock lock(m_mutex);
 
         const char* typeName = getType<T>();
-        m_registeredFactories.insert(std::make_pair(typeName,
-                                                    []() { return std::unique_ptr<T>(new TConcrete()); }));
+        m_registeredFactories.insert(std::make_pair(
+            typeName, []() { return std::unique_ptr<T>(new TConcrete()); }));
         return *this;
     }
 
@@ -169,7 +171,8 @@ public:
         return *this;
     }
 
-    /// Registers an instance for a given type. This version performs a copy of the object, using the copy
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr).
     /// @tparam T The type of the instance.
     /// @param[in] instance The instance to be held within the container.
@@ -180,9 +183,10 @@ public:
         return bindInstance("", instance);
     }
 
-    /// Registers an instance for a given type. This version refers to the object and will not manage lifetime
-    ///     as the shared_ptr will have a null deleter. To call this, use: bindInstance(std::ref(instance)) or
-    ///     bindInstance(std:::cref(instance))
+    /// Registers an instance for a given type. This version refers to the object and will
+    /// not manage lifetime
+    ///     as the shared_ptr will have a null deleter. To call this, use:
+    ///     bindInstance(std::ref(instance)) or bindInstance(std:::cref(instance))
     /// @tparam T The type of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
@@ -192,9 +196,10 @@ public:
         return bindInstance("", instance);
     }
 
-    /// Registers an instance for a given type. This version refers to a pointer to be held within the container
-    ///     and does not manage lifetime. If you want to manage lifetime, please see the unique_ptr or shared_ptr
-    ///     versions.
+    /// Registers an instance for a given type. This version refers to a pointer to be
+    /// held within the container
+    ///     and does not manage lifetime. If you want to manage lifetime, please see the
+    ///     unique_ptr or shared_ptr versions.
     /// @tparam T The type of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
@@ -204,7 +209,8 @@ public:
         return bindInstance("", instance);
     }
 
-    /// Registers an instance for a given type. This version will take in a unique_ptr, take ownership and manage
+    /// Registers an instance for a given type. This version will take in a unique_ptr,
+    /// take ownership and manage
     ///     lifetime via a Holder (shared_ptr).
     /// @tparam T The type of the instance.
     /// @param[in] instance The instance to be held within the container.
@@ -215,7 +221,8 @@ public:
         return bindInstance("", instance);
     }
 
-    /// Registers an instance for a given type. This version will take in a shared_ptr and share lifetime with
+    /// Registers an instance for a given type. This version will take in a shared_ptr and
+    /// share lifetime with
     //      any other shared_ptrs that reference it.
     /// @tparam T The type of the instance.
     /// @param[in] instance The instance to be held within the container.
@@ -226,7 +233,8 @@ public:
         return bindInstance("", instance);
     }
 
-    /// Registers an instance for a given type. This version performs a copy of the object, using the copy
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr).
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
@@ -238,21 +246,24 @@ public:
         return bindInstance<T>(name, HolderPtr<T>(new T(instance)));
     }
 
-    /// Registers an instance for a given type. This version performs a copy of the object, using the copy
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr).
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    IocContainer& bindInstance(const std::string& name, std::reference_wrapper<T> instance)
+    IocContainer& bindInstance(const std::string& name,
+                               std::reference_wrapper<T> instance)
     {
         return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
     }
 
-    /// Registers an instance for a given type. This version refers to a pointer to be held within the container
-    ///     and does not manage lifetime. If you want to manage lifetime, please see the unique_ptr or shared_ptr
-    ///     versions.
+    /// Registers an instance for a given type. This version refers to a pointer to be
+    /// held within the container
+    ///     and does not manage lifetime. If you want to manage lifetime, please see the
+    ///     unique_ptr or shared_ptr versions.
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
     /// @param[in] instance The instance to be held within the container.
@@ -263,7 +274,8 @@ public:
         return bindInstance<T>(name, HolderPtr<T>(instance, [](T*) {}));
     }
 
-    /// Registers an instance for a given type. This version will take in a unique_ptr, take ownership and manage
+    /// Registers an instance for a given type. This version will take in a unique_ptr,
+    /// take ownership and manage
     ///     lifetime via a Holder (shared_ptr).
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
@@ -275,7 +287,8 @@ public:
         return bindInstance(name, std::shared_ptr<T>(std::move(instance)));
     }
 
-    /// Registers an instance for a given type. This version will take in a shared_ptr and share lifetime with
+    /// Registers an instance for a given type. This version will take in a shared_ptr and
+    /// share lifetime with
     //      any other shared_ptrs that reference it.
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
@@ -335,9 +348,10 @@ public:
     /// Creates an instance using a registered factory.
     /// @tparam T The type of the instance.
     /// @returns Reference to the IocContainer, for chaining operations.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
-    template <class T, class ... TArgs>
+    template <class T, class... TArgs>
     IocContainer& create(TArgs... args)
     {
         return createByName<T>("", args...);
@@ -346,9 +360,10 @@ public:
     /// Creates an instance using a registered factory and assign it the specified name.
     /// @tparam T The type of the instance.
     /// @returns Reference to the IocContainer, for chaining operations.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
-    template <class T, class ... TArgs>
+    template <class T, class... TArgs>
     IocContainer& createByName(const std::string& name, TArgs... args)
     {
         const char* typeName = getType<T>();
@@ -365,11 +380,13 @@ public:
         {
             if (m_parent == nullptr)
             {
-                using namespace boost;
-                static const format fmt(
-                        "Not registered factory exists which can create this object. "
-                        "Expected Holder Type = %1%, Name = %2%");
-                BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(format(fmt) % getType<T>() % name)));
+                using boost::format;
+                using boost::str;
+                static const format fmt("Not registered factory exists which can create "
+                                        "this object. "
+                                        "Expected Holder Type = %1%, Name = %2%");
+                BOOST_THROW_EXCEPTION(
+                    IocException() << StringInfo(str(format(fmt) % getType<T>() % name)));
             }
 
             m_parent->createByName<T>(name, args...);
@@ -387,7 +404,8 @@ public:
         return contains<T>("");
     }
 
-    /// Checks whether the container holds an instance of that particular type and particular name.
+    /// Checks whether the container holds an instance of that particular type and
+    /// particular name.
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
     /// @returns \c true if contains an instance of that type; \c false otherwise.
@@ -398,11 +416,13 @@ public:
         return find<T>(name).first;
     }
 
-    /// Returns a copy of the object from within the IOC container. This should only be used
+    /// Returns a copy of the object from within the IOC container. This should only be
+    /// used
     ///     if the object is copy-constructible.
     /// @tparam T The type of the instance.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T get() const
@@ -410,11 +430,13 @@ public:
         return get<T>("");
     }
 
-    /// Returns a pointer to the object from within the IOC container. You should NOT explicitly
+    /// Returns a pointer to the object from within the IOC container. You should NOT
+    /// explicitly
     //      delete the pointer if the object was created with any ownership semantics.
     /// @tparam T The type of the instance.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T* getPtr() const
@@ -422,11 +444,13 @@ public:
         return getPtr<T>("");
     }
 
-    /// Returns a reference to the object from within the IOC container. This is ideal if you inserted
+    /// Returns a reference to the object from within the IOC container. This is ideal if
+    /// you inserted
     ///     an instance via a ref/cref semantic or a unique_ptr semantic.
     /// @tparam T The type of the instance.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T& getRef() const
@@ -434,11 +458,14 @@ public:
         return getRef<T>("");
     }
 
-    /// Returns a shared_ptr to the object from within the IOC container. This is ideal if you inserted
-    ///     the object via the shared_ptr<> mechanism, because you intend to share ownership.
+    /// Returns a shared_ptr to the object from within the IOC container. This is ideal if
+    /// you inserted
+    ///     the object via the shared_ptr<> mechanism, because you intend to share
+    ///     ownership.
     /// @tparam T The type of the instance.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     std::shared_ptr<T> getShared() const
@@ -446,17 +473,20 @@ public:
         return getShared<T>("");
     }
 
-    /// Returns a copy of the object from within the IOC container. This should only be used
+    /// Returns a copy of the object from within the IOC container. This should only be
+    /// used
     ///     if the object is copy-constructible.
     /// @tparam T The type of the instance.
     /// @param name The name of the instance to retrieve.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T get(const std::string& name) const
     {
-        using namespace boost;
+        using boost::format;
+        using boost::str; 
 
         Lock lock(m_mutex);
 
@@ -466,8 +496,10 @@ public:
 
         if (!item.first)
         {
-            static const format fmt("Item not found by type and name. Expected Holder Type = %1%, Name = %2%");
-            BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(format(fmt) % expectedHolderType % name)));
+            static const format fmt("Item not found by type and name. Expected Holder "
+                                    "Type = %1%, Name = %2%");
+            BOOST_THROW_EXCEPTION(IocException() << StringInfo(
+                                      str(format(fmt) % expectedHolderType % name)));
         }
 
         auto innerIter = item.second;
@@ -477,45 +509,54 @@ public:
 
         if (holderType == expectedHolderType)
         {
-            return *boost::any_cast<HolderPtr<T> >(holder);
+            return *boost::any_cast<HolderPtr<T>>(holder);
         }
 
-        static const format fmt("Holder type doesn't match expected holder type %1% != %2%");
-        BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(format(fmt) % holderType % expectedHolderType)));
+        static const format fmt("Holder type doesn't match expected holder type %1% != "
+                                "%2%");
+        BOOST_THROW_EXCEPTION(IocException() << StringInfo(
+                                  str(format(fmt) % holderType % expectedHolderType)));
     }
 
-    /// Returns a pointer to the object from within the IOC container. You should NOT explicitly
+    /// Returns a pointer to the object from within the IOC container. You should NOT
+    /// explicitly
     //      delete the pointer if the object was created with any ownership semantics.
     /// @tparam T The type of the instance.
     /// @param name The name of the instance to retrieve.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T* getPtr(const std::string& name) const
     {
-        return boost::any_cast<HolderPtr<T> >(getInternal<T>(name)).get();
+        return boost::any_cast<HolderPtr<T>>(getInternal<T>(name)).get();
     }
 
-    /// Returns a reference to the object from within the IOC container. This is ideal if you inserted
+    /// Returns a reference to the object from within the IOC container. This is ideal if
+    /// you inserted
     ///     an instance via a ref/cref semantic or a unique_ptr semantic.
     /// @tparam T The type of the instance.
     /// @param name The name of the instance to retrieve.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     T& getRef(const std::string& name) const
     {
-        return *boost::any_cast<HolderPtr<T> >(getInternal<T>(name)).get();
+        return *boost::any_cast<HolderPtr<T>>(getInternal<T>(name)).get();
     }
 
-    /// Returns a shared_ptr to the object from within the IOC container. This is ideal if you inserted
-    ///     the object via the shared_ptr<> mechanism, because you intend to share ownership.
+    /// Returns a shared_ptr to the object from within the IOC container. This is ideal if
+    /// you inserted
+    ///     the object via the shared_ptr<> mechanism, because you intend to share
+    ///     ownership.
     /// @tparam T The type of the instance.
     /// @param name The name of the instance to retrieve.
     /// @returns The instance of the object from within the IOC container.
-    /// @throws IocException If object is not contained within the container and there is no factory
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
     ///     registered to create it.
     template <class T>
     std::shared_ptr<T> getShared(const std::string& name) const
@@ -523,9 +564,9 @@ public:
         return boost::any_cast<HolderPtr<T>>(getInternal<T>(name));
     }
 
-    // Retrieve a static constant instance of this object for cases where we are calling through
-    // to an IOC container, but have nothing to put in it. This will ensure the correct
-    // object lifetime.
+    // Retrieve a static constant instance of this object for cases where we are calling
+    // through to an IOC container, but have nothing to put in it. This will ensure the
+    // correct object lifetime.
     static const IocContainer& emptyContainer()
     {
         static const IocContainer empty;
@@ -540,7 +581,8 @@ private:
     template <class T>
     using HolderPtr = std::shared_ptr<T>;
     using InnerRegisteredInstanceMap = std::unordered_map<std::string, Holder>;
-    using RegisteredInstances = std::unordered_map<std::string, InnerRegisteredInstanceMap>;
+    using RegisteredInstances =
+        std::unordered_map<std::string, InnerRegisteredInstanceMap>;
 
     using Mutex = std::recursive_mutex;
     using Lock = std::unique_lock<Mutex>;
@@ -561,21 +603,22 @@ private:
 
     // Internal helper method for finding the registered instance.
     template <class T>
-    std::pair<bool, InnerRegisteredInstanceMap::iterator> find(const std::string& name, bool checkFactory = true)
+    std::pair<bool, InnerRegisteredInstanceMap::iterator> find(const std::string& name,
+                                                               bool checkFactory = true)
     {
         Lock lock(m_mutex);
 
         // Internally does a const_cast to maximize code reuse.
         auto res = const_cast<const IocContainer*>(this)->find<T>(name, checkFactory);
 
-        return std::make_pair(res.first, const_cast<InnerRegisteredInstanceMap::iterator>(res.second));
-
+        return std::make_pair(
+            res.first, const_cast<InnerRegisteredInstanceMap::iterator>(res.second));
     }
 
     // Internal helper method for finding the registered instance.
     template <class T>
     std::pair<bool, InnerRegisteredInstanceMap::const_iterator> find(
-            const std::string& name, bool checkFactory = true) const
+        const std::string& name, bool checkFactory = true) const
     {
         Lock lock(m_mutex);
 
@@ -613,7 +656,8 @@ private:
     template <class T>
     Holder getInternal(const std::string& name) const
     {
-        using namespace boost;
+        using boost::format;
+        using boost::str;        
 
         Lock lock(m_mutex);
 
@@ -623,8 +667,10 @@ private:
 
         if (!item.first)
         {
-            static const format fmt("Item not found by type and name. Expected Holder Type = %1%, Name = %2%");
-            BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(format(fmt) % expectedHolderType % name)));
+            static const format fmt("Item not found by type and name. Expected Holder "
+                                    "Type = %1%, Name = %2%");
+            BOOST_THROW_EXCEPTION(IocException() << StringInfo(
+                                      str(format(fmt) % expectedHolderType % name)));
         }
 
         auto innerIter = item.second;
@@ -638,8 +684,10 @@ private:
             return innerIter->second;
         }
 
-        static const format fmt("Holder type doesn't match expected holder type %1% != %2%");
-        BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(format(fmt) % holderType % expectedHolderType)));
+        static const format fmt("Holder type doesn't match expected holder type %1% != "
+                                "%2%");
+        BOOST_THROW_EXCEPTION(IocException() << StringInfo(
+                                  str(format(fmt) % holderType % expectedHolderType)));
     }
 
     // Pointer to the parent container.
@@ -655,7 +703,6 @@ private:
     mutable Mutex m_mutex;
 };
 
-
 //----------------------------------------------------------------------------------------------------------------------
-} // cppinvert 
+} // cppinvert
 //----------------------------------------------------------------------------------------------------------------------
