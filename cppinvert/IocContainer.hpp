@@ -24,7 +24,7 @@ typedef boost::error_info<struct tag_errmsg, std::string> StringInfo;
 class IocException : virtual public boost::exception, virtual public std::exception
 {
 public:
-    virtual const char* what()
+    virtual const char* what() const noexcept override
     {
         return "Library threw an exception";
     }
@@ -146,15 +146,14 @@ public:
     /// @tparam T The type of the instance that will be created.
     /// @tparam TConcrete The type of the concrete instance that will be created.
     /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T, class TConcrete>
+    template <class T, class TConcrete, class... TArgs>
     IocContainer& registerDefaultFactory()
     {
-        Lock lock(m_mutex);
+        Factory<T, TArgs...> factory = [](TArgs... args) {
+            return std::make_unique<TConcrete>(args...);
+        };
 
-        const char* typeName = getType<T>();
-        m_registeredFactories.insert(std::make_pair(
-            typeName, []() { return std::unique_ptr<T>(new TConcrete()); }));
-        return *this;
+        return registerFactory<T>(factory);
     }
 
     /// Registers a factory function for a given type.
@@ -187,13 +186,14 @@ public:
     /// not manage lifetime
     ///     as the shared_ptr will have a null deleter. To call this, use:
     ///     bindInstance(std::ref(instance)) or bindInstance(std:::cref(instance))
-    /// @tparam T The type of the instance.
+    /// @tparam T The type of the interface.
+    /// @tparam T2 The type of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T>
-    IocContainer& bindInstance(std::reference_wrapper<T> instance)
+    template <class T, class T2=T>
+    IocContainer& bindInstance(std::reference_wrapper<T2> instance)
     {
-        return bindInstance("", instance);
+        return bindInstance<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to a pointer to be
@@ -250,28 +250,15 @@ public:
     /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr).
     /// @tparam T The type of the instance.
+    /// @tparam T2 The type of the interface.
     /// @param[in] name The name of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T>
+    template <class T, class T2=T>
     IocContainer& bindInstance(const std::string& name,
-                               std::reference_wrapper<T> instance)
+                               std::reference_wrapper<T2> instance)
     {
         return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
-    }
-
-    /// Registers an instance for a given type. This version refers to a pointer to be
-    /// held within the container
-    ///     and does not manage lifetime. If you want to manage lifetime, please see the
-    ///     unique_ptr or shared_ptr versions.
-    /// @tparam T The type of the instance.
-    /// @param[in] name The name of the instance.
-    /// @param[in] instance The instance to be held within the container.
-    /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T>
-    IocContainer& bindInstance(const std::string& name, T* instance)
-    {
-        return bindInstance<T>(name, HolderPtr<T>(instance, [](T*) {}));
     }
 
     /// Registers an instance for a given type. This version will take in a unique_ptr,
@@ -288,8 +275,7 @@ public:
     }
 
     /// Registers an instance for a given type. This version will take in a shared_ptr and
-    /// share lifetime with
-    //      any other shared_ptrs that reference it.
+    /// share lifetime with any other shared_ptrs that reference it.
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
     /// @param[in] instance The instance to be held within the container.
@@ -343,6 +329,51 @@ public:
         }
 
         return *this;
+    }
+
+    /// Creates an instance using a registered factory.
+    /// @tparam T The type of the instance.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
+    ///     registered to create it.
+    template <class T, class... TArgs>
+    std::unique_ptr<T> createWithoutStoring(TArgs... args)
+    {
+        return createByNameWithoutStoring<T>("", std::forward<TArgs>(args)...);
+    }
+
+    /// Creates an instance using a registered factory and assign it the specified name.
+    /// @tparam T The type of the instance.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
+    ///     registered to create it.
+    template <class T, class... TArgs>
+    std::unique_ptr<T> createByNameWithoutStoring(const std::string& name, TArgs... args)
+    {
+        const char* typeName = getType<T>();
+
+        if (m_registeredFactories.count(typeName))
+        {
+            // See if there is a factory that can create this object.
+            const auto& holder = m_registeredFactories.at(typeName);
+            Factory<T, TArgs...> factory = boost::any_cast<Factory<T, TArgs...>>(holder);
+            return std::unique_ptr<T>(factory(args...));
+        }
+
+        if (m_parent == nullptr)
+        {
+            using boost::format;
+            using boost::str;
+            static const format fmt("Not registered factory exists which can create "
+                                    "this object. "
+                                    "Expected Holder Type = %1%, Name = %2%");
+            BOOST_THROW_EXCEPTION(IocException()
+                                  << StringInfo(str(format(fmt) % getType<T>() % name)));
+        }
+
+        return m_parent->createByNameWithoutStoring<T>(name, args...);
     }
 
     /// Creates an instance using a registered factory.
@@ -486,7 +517,7 @@ public:
     T get(const std::string& name) const
     {
         using boost::format;
-        using boost::str; 
+        using boost::str;
 
         Lock lock(m_mutex);
 
@@ -657,7 +688,7 @@ private:
     Holder getInternal(const std::string& name) const
     {
         using boost::format;
-        using boost::str;        
+        using boost::str;
 
         Lock lock(m_mutex);
 
