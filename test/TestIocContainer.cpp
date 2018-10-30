@@ -1,9 +1,16 @@
-#include <ioc/IocContainer.hpp>
-#include <boost/test/unit_test.hpp>
+#define BOOST_TEST_MODULE Test
 
+#include <cppinvert/IocContainer.hpp>
+
+#include <functional>
+#include <random>
 #include <thread>
 
+#include <boost/test/included/unit_test.hpp>
 #include <boost/test/unit_test.hpp>
+
+using namespace cppinvert;
+using namespace std;
 
 class Fixture
 {
@@ -12,9 +19,6 @@ public:
 };
 
 BOOST_FIXTURE_TEST_SUITE(TestIocContainer, Fixture)
-
-using namespace cppinvert;
-using namespace std;
 
 BOOST_AUTO_TEST_CASE(checkConstruction)
 {
@@ -82,7 +86,7 @@ BOOST_AUTO_TEST_CASE(testIocContainerInThread)
     subIocContainer.bindInstance("ip", ip).
         bindInstance("port", port);
 
-     auto testInThread = [&iocContainer]()
+     auto testInThread = [this, &subIocContainer]()
      {
         BOOST_CHECK(iocContainer.contains<IocContainer>(testFactory));
 
