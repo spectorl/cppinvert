@@ -30,6 +30,43 @@ public:
     }
 };
 
+/// Used to disambiguate a value that is meant to be handled as a value that will be copied
+/// @tparam T The type in the value wrapper
+template <class T>
+struct value_wrapper
+{
+    value_wrapper(const T& val) :
+        value_(val)
+    {
+    }
+
+    const T& get() const
+    {
+        return value_;
+    }
+
+private:
+    const T& value_;
+};
+
+/// Helper for value wrappers similar to ref for reference_wrappers
+/// @tparam T The type in the value wrapper
+/// @returns The returned value wrapper
+template <class T>
+inline value_wrapper<T> val(const T& value)
+{
+    return value_wrapper<T>(value);
+}
+
+template <class T>
+struct is_reference_wrapper : std::false_type{};
+
+template <class T>
+struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type{};
+
+template< class T >
+inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
+
 /// @brief Implementation of an IOC container for C++ code.
 ///
 /// A container that supports holding any type of object, as well as managing the
@@ -177,21 +214,46 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    IocContainer& bindInstance(const T& instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(value_wrapper<T> instance)
     {
-        return bindInstance("", instance);
+        return bindInstance<T>("", instance);
+    }
+
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr).
+    /// @tparam T The type of the instance.
+    /// @param[in] instance The instance to be held within the container.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(const T& instance)
+    {
+        return bindValue<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to the object and will
     /// not manage lifetime
     ///     as the shared_ptr will have a null deleter. To call this, use:
     ///     bindInstance(std::ref(instance)) or bindInstance(std:::cref(instance))
-    /// @tparam T The type of the interface.
+    /// @tparam T The type of the instance.
+    /// @param[in] instance The instance to be held within the container.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    IocContainer& bindInstance(std::reference_wrapper<T> instance)
+    {
+        return bindInstance<T>("", instance);
+    }
+
+    /// Registers an instance for a given type. This version refers to the object and will
+    /// not manage lifetime
+    ///     as the shared_ptr will have a null deleter. To call this, use:
+    ///     bindInstance(std::ref(instance)) or bindInstance(std:::cref(instance))
+    /// @tparam T The type of the instance.
     /// @tparam T2 The type of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T, class T2=T>
-    IocContainer& bindInstance(std::reference_wrapper<T2> instance)
+    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(std::reference_wrapper<T2> instance)
     {
         return bindInstance<T>("", instance);
     }
@@ -206,7 +268,7 @@ public:
     template <class T>
     IocContainer& bindInstance(T* instance)
     {
-        return bindInstance("", instance);
+        return bindInstance<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version will take in a unique_ptr,
@@ -218,7 +280,7 @@ public:
     template <class T>
     IocContainer& bindInstance(std::unique_ptr<T> instance)
     {
-        return bindInstance("", instance);
+        return bindInstance<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version will take in a shared_ptr and
@@ -230,7 +292,7 @@ public:
     template <class T>
     IocContainer& bindInstance(std::shared_ptr<T> instance)
     {
-        return bindInstance("", instance);
+        return bindInstance<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -241,7 +303,20 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    IocContainer& bindInstance(const std::string& name, const T& instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(const std::string& name, value_wrapper<T> instance)
+    {
+        return bindValue(name, instance.get());
+    }
+
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr).
+    /// @tparam T The type of the instance.
+    /// @param[in] name The name of the instance.
+    /// @param[in] instance The instance to be held within the container.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(const std::string& name, const T& instance)
     {
         return bindInstance<T>(name, HolderPtr<T>(new T(instance)));
     }
@@ -250,15 +325,42 @@ public:
     /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr).
     /// @tparam T The type of the instance.
-    /// @tparam T2 The type of the interface.
     /// @param[in] name The name of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T, class T2=T>
+    template <class T>
     IocContainer& bindInstance(const std::string& name,
-                               std::reference_wrapper<T2> instance)
+                               std::reference_wrapper<T> instance)
     {
         return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
+    }
+
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr).
+    /// @tparam T The type of the instance.
+    /// @tparam T2 The type of the instance.
+    /// @param[in] name The name of the instance.
+    /// @param[in] instance The instance to be held within the container.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T, class T2>
+    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
+        const std::string& name, std::reference_wrapper<T2> instance)
+    {
+        return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
+    }
+
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr).
+    /// @tparam T The type of the instance.
+    /// @param[in] name The name of the instance.
+    /// @param[in] instance The instance to be held within the container.
+    /// @returns Reference to the IocContainer, for chaining operations.
+    template <class T>
+    IocContainer& bindInstance(const std::string& name, T* instance)
+    {
+        return bindInstance<T>(name, HolderPtr<T>(instance, [](T*) {}));
     }
 
     /// Registers an instance for a given type. This version will take in a unique_ptr,
@@ -271,7 +373,7 @@ public:
     template <class T>
     IocContainer& bindInstance(const std::string& name, std::unique_ptr<T> instance)
     {
-        return bindInstance(name, std::shared_ptr<T>(std::move(instance)));
+        return bindInstance<T>(name, std::shared_ptr<T>(std::move(instance)));
     }
 
     /// Registers an instance for a given type. This version will take in a shared_ptr and
