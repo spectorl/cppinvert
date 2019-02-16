@@ -20,7 +20,7 @@ namespace cppinvert
 typedef boost::error_info<struct tag_errmsg, std::string> StringInfo;
 
 /// A custom exception, so it's easier to track exceptions that are due to errors from the
-/// IOC container.
+/// IOC container
 class IocException : virtual public boost::exception, virtual public std::exception
 {
 public:
@@ -35,8 +35,8 @@ public:
 template <class T>
 struct value_wrapper
 {
-    value_wrapper(const T& val) :
-        value_(val)
+    value_wrapper(const T& val)
+        : value_(val)
     {
     }
 
@@ -59,12 +59,16 @@ inline value_wrapper<T> val(const T& value)
 }
 
 template <class T>
-struct is_reference_wrapper : std::false_type{};
+struct is_reference_wrapper : std::false_type
+{
+};
 
 template <class T>
-struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type{};
+struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type
+{
+};
 
-template< class T >
+template <class T>
 inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
 
 /// @brief Implementation of an IOC container for C++ code.
@@ -214,7 +218,8 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(value_wrapper<T> instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
+        value_wrapper<T> instance)
     {
         return bindInstance<T>("", instance);
     }
@@ -226,7 +231,8 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(const T& instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
+        const T& instance)
     {
         return bindValue<T>("", instance);
     }
@@ -252,8 +258,9 @@ public:
     /// @tparam T2 The type of the instance.
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
-    template <class T, class T2=T>
-    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(std::reference_wrapper<T2> instance)
+    template <class T, class T2 = T>
+    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
+        std::reference_wrapper<T2> instance)
     {
         return bindInstance<T>("", instance);
     }
@@ -303,7 +310,8 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(const std::string& name, value_wrapper<T> instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
+        const std::string& name, value_wrapper<T> instance)
     {
         return bindValue(name, instance.get());
     }
@@ -316,7 +324,8 @@ public:
     /// @param[in] instance The instance to be held within the container.
     /// @returns Reference to the IocContainer, for chaining operations.
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(const std::string& name, const T& instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
+        const std::string& name, const T& instance)
     {
         return bindInstance<T>(name, HolderPtr<T>(new T(instance)));
     }
