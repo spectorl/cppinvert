@@ -30,7 +30,8 @@ public:
     }
 };
 
-/// Used to disambiguate a value that is meant to be handled as a value that will be copied
+/// Used to disambiguate a value that is meant to be handled as a value that will be
+/// copied
 /// @tparam T The type in the value wrapper
 template <class T>
 struct value_wrapper
@@ -142,7 +143,7 @@ public:
     ///     the recursive case, those will only be locked when they individually count
     ///     their size, and so on, so it's possible that the count will not be an exact
     ///     snapshot for that moment in time.
-    std::size_t size(bool recursive = false) const
+    std::size_t size [[nodiscard]] (bool recursive = false) const
     {
         Lock lock(m_mutex);
 
@@ -449,7 +450,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T, class... TArgs>
-    std::unique_ptr<T> createWithoutStoring(TArgs... args)
+    std::unique_ptr<T> createWithoutStoring [[nodiscard]] (TArgs... args)
     {
         return createByNameWithoutStoring<T>("", std::forward<TArgs>(args)...);
     }
@@ -461,7 +462,8 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T, class... TArgs>
-    std::unique_ptr<T> createByNameWithoutStoring(const std::string& name, TArgs... args)
+    std::unique_ptr<T> createByNameWithoutStoring
+        [[nodiscard]] (const std::string& name, TArgs... args)
     {
         const char* typeName = getType<T>();
 
@@ -541,7 +543,7 @@ public:
     /// @tparam T The type of the instance.
     /// @returns \c true if contains an instance of that type; \c false otherwise.
     template <class T>
-    bool contains() const
+    bool contains [[nodiscard]] () const
     {
         return contains<T>("");
     }
@@ -552,7 +554,7 @@ public:
     /// @param[in] name The name of the instance.
     /// @returns \c true if contains an instance of that type; \c false otherwise.
     template <class T>
-    bool contains(const std::string& name) const
+    bool contains [[nodiscard]] (const std::string& name) const
     {
         Lock lock(m_mutex);
         return find<T>(name).first;
@@ -567,7 +569,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T get() const
+    T get [[nodiscard]] () const
     {
         return get<T>("");
     }
@@ -581,7 +583,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T* getPtr() const
+    T* getPtr [[nodiscard]] () const
     {
         return getPtr<T>("");
     }
@@ -595,7 +597,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T& getRef() const
+    T& getRef [[nodiscard]] () const
     {
         return getRef<T>("");
     }
@@ -610,7 +612,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    std::shared_ptr<T> getShared() const
+    std::shared_ptr<T> getShared [[nodiscard]] () const
     {
         return getShared<T>("");
     }
@@ -625,7 +627,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T get(const std::string& name) const
+    T get [[nodiscard]] (const std::string& name) const
     {
         using boost::format;
         using boost::str;
@@ -670,7 +672,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T* getPtr(const std::string& name) const
+    T* getPtr [[nodiscard]] (const std::string& name) const
     {
         return boost::any_cast<HolderPtr<T>>(getInternal<T>(name)).get();
     }
@@ -685,7 +687,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    T& getRef(const std::string& name) const
+    T& getRef [[nodiscard]] (const std::string& name) const
     {
         return *boost::any_cast<HolderPtr<T>>(getInternal<T>(name)).get();
     }
@@ -701,7 +703,7 @@ public:
     /// no factory
     ///     registered to create it.
     template <class T>
-    std::shared_ptr<T> getShared(const std::string& name) const
+    std::shared_ptr<T> getShared [[nodiscard]] (const std::string& name) const
     {
         return boost::any_cast<HolderPtr<T>>(getInternal<T>(name));
     }
@@ -731,22 +733,22 @@ private:
 
     // Helper to get types in a consistent way.
     template <class T>
-    const char* getType() const
+    const char* getType [[nodiscard]] () const
     {
         return typeid(std::decay_t<T>).name();
     }
 
     // Helper to get types in a consistent way.
     template <class T>
-    const char* getType(const T&) const
+    const char* getType [[nodiscard]] (const T&) const
     {
         return getType<T>();
     }
 
     // Internal helper method for finding the registered instance.
     template <class T>
-    std::pair<bool, InnerRegisteredInstanceMap::iterator> find(const std::string& name,
-                                                               bool checkFactory = true)
+    std::pair<bool, InnerRegisteredInstanceMap::iterator> find
+        [[nodiscard]] (const std::string& name, bool checkFactory = true)
     {
         Lock lock(m_mutex);
 
@@ -759,8 +761,8 @@ private:
 
     // Internal helper method for finding the registered instance.
     template <class T>
-    std::pair<bool, InnerRegisteredInstanceMap::const_iterator> find(
-        const std::string& name, bool checkFactory = true) const
+    std::pair<bool, InnerRegisteredInstanceMap::const_iterator> find
+        [[nodiscard]] (const std::string& name, bool checkFactory = true) const
     {
         Lock lock(m_mutex);
 
@@ -796,7 +798,7 @@ private:
 
     // Internal helper method for the get method.
     template <class T>
-    Holder getInternal(const std::string& name) const
+    Holder getInternal [[nodiscard]] (const std::string& name) const
     {
         using boost::format;
         using boost::str;
