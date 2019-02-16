@@ -80,6 +80,10 @@ inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
 class IocContainer : private boost::noncopyable
 {
 public:
+    /// Definition for a shared factory function for creating objects
+    template <class T, class... TArgs>
+    using SharedFactory = std::function<std::shared_ptr<T>(TArgs...)>;
+
     /// Definition for a factory function for creating objects
     template <class T, class... TArgs>
     using Factory = std::function<std::unique_ptr<T>(TArgs...)>;
@@ -515,10 +519,23 @@ public:
         if (m_registeredFactories.count(typeName))
         {
             const auto& holder = m_registeredFactories.at(typeName);
-            auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
-            std::unique_ptr<T> inst(factory(args...));
-            // See if there is a factory that can create this object
-            bindInstance(name, std::move(inst));
+            const char* holderType = holder.type().name();
+            const char* expectedHolderType = getType<SharedFactory<T, TArgs...>>();
+
+            if (holderType == expectedHolderType)
+            {
+                auto factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
+                std::shared_ptr<T> inst(factory(args...));
+                // See if there is a factory that can create this object
+                bindInstance(name, std::move(inst));
+            }
+            else
+            {
+                auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
+                std::unique_ptr<T> inst(factory(args...));
+                // See if there is a factory that can create this object
+                bindInstance(name, std::move(inst));
+            }
         }
         else
         {
