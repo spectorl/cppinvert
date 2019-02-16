@@ -548,8 +548,8 @@ public:
         return contains<T>("");
     }
 
-    /// Checks whether the container holds an instance of that particular type and
-    /// particular name.
+    /// Checks whether the container holds an instance or factory of that particular type
+    /// and particular name
     /// @tparam T The type of the instance.
     /// @param[in] name The name of the instance.
     /// @returns \c true if contains an instance of that type; \c false otherwise.
@@ -557,7 +557,24 @@ public:
     bool contains [[nodiscard]] (const std::string& name) const
     {
         Lock lock(m_mutex);
-        return find<T>(name).first;
+
+        const std::string typeName = getType<T>();
+
+        auto iter = m_registeredInstances.find(typeName);
+
+        if (iter != m_registeredInstances.end())
+        {
+            const auto& innerInstanceMap = iter->second;
+
+            const auto& innerIter = innerInstanceMap.find(name);
+
+            if (innerIter != innerInstanceMap.end())
+            {
+                return true;
+            }
+        }
+
+        return m_registeredFactories.count(typeName) > 0;
     }
 
     /// Returns a copy of the object from within the IOC container. This should only be
