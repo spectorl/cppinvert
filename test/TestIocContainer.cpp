@@ -162,6 +162,40 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryMultiples)
     BOOST_CHECK_EQUAL(iocContainer.size(), 2);
 }
 
+BOOST_AUTO_TEST_CASE(testIocContainerSharedFactoryMultiples)
+{
+    class ISomething
+    {
+    public:
+        virtual ~ISomething() {}
+    };
+
+    class SomethingElse : virtual public ISomething
+    {};
+
+    IocContainer::SharedFactory<ISomething> factory = []() { return std::shared_ptr<ISomething>(new SomethingElse()); };
+    iocContainer.registerFactory<ISomething>(factory);
+
+    BOOST_CHECK_EQUAL(iocContainer.size(), 0);
+    ISomething* a1 = iocContainer.getPtr<ISomething>("a");
+    BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+    ISomething* a2 = iocContainer.getPtr<ISomething>("a");
+    BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+    BOOST_CHECK_EQUAL(a1, a2);
+    std::shared_ptr<ISomething> a3 = iocContainer.getShared<ISomething>("a");
+    BOOST_CHECK_EQUAL(a2, a3.get());
+    BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+    ISomething& b1 = iocContainer.getRef<ISomething>("b");
+    BOOST_CHECK(a1 != &b1);
+    BOOST_CHECK_EQUAL(iocContainer.size(), 2);
+    ISomething& b2 = iocContainer.getRef<ISomething>("b");
+    BOOST_CHECK_EQUAL(&b1, &b2);
+    BOOST_CHECK_EQUAL(iocContainer.size(), 2);
+    std::shared_ptr<ISomething> b3 = iocContainer.getShared<ISomething>("b");
+    BOOST_CHECK_EQUAL(&b2, b3.get());
+    BOOST_CHECK_EQUAL(iocContainer.size(), 2);
+}
+
 BOOST_AUTO_TEST_CASE(testIocContainerFactoryTemplateParameterPack)
 {
     class IObject
@@ -184,6 +218,40 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryTemplateParameterPack)
     };
 
     IocContainer::Factory<IObject, int, int> factory =
+        [](int x, int y) { return std::unique_ptr<IObject>(new Point(x, y)); };
+    iocContainer.registerFactory<IObject>(factory);
+
+    BOOST_CHECK_EQUAL(iocContainer.size(), 0);
+    IObject& a = iocContainer.create<IObject>(3, 4).getRef<IObject>();
+    BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+    Point& p = dynamic_cast<Point&>(a);
+    BOOST_CHECK_EQUAL(p.m_x, 3);
+    BOOST_CHECK_EQUAL(p.m_y, 4);
+    BOOST_CHECK_EQUAL(iocContainer.size(), 1);
+}
+
+BOOST_AUTO_TEST_CASE(testIocContainerSharedFactoryTemplateParameterPack)
+{
+    class IObject
+    {
+    public:
+        virtual ~IObject() {}
+    };
+
+    class Point : virtual public IObject
+    {
+    public:
+        Point(int x, int y) :
+            m_x(x), m_y(y)
+        {
+
+        }
+
+        int m_x;
+        int m_y;
+    };
+
+    IocContainer::SharedFactory<IObject, int, int> factory =
         [](int x, int y) { return std::unique_ptr<IObject>(new Point(x, y)); };
     iocContainer.registerFactory<IObject>(factory);
 

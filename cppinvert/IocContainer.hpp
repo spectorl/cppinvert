@@ -483,7 +483,7 @@ public:
         {
             using boost::format;
             using boost::str;
-            static const format fmt("Not registered factory exists which can create "
+            static const format fmt("No registered factory exists which can create "
                                     "this object. "
                                     "Expected Holder Type = %1%, Name = %2%");
             BOOST_THROW_EXCEPTION(IocException()
@@ -492,6 +492,52 @@ public:
 
         return m_parent->createByNameWithoutStoring<T>(name, args...);
     }
+
+    /// Creates an instance using a registered factory
+    /// @tparam T The type of the instance
+    /// @returns Reference to the IocContainer, for chaining operations
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
+    ///     registered to create it
+    template <class T, class... TArgs>
+    std::shared_ptr<T> createWithoutStoringShared [[nodiscard]] (TArgs... args)
+    {
+        return createByNameWithoutStoringShared<T>("", std::forward<TArgs>(args)...);
+    }
+
+    /// Creates an instance using a registered factory and assign it the specified name
+    /// @tparam T The type of the instance
+    /// @returns Reference to the IocContainer, for chaining operations
+    /// @throws IocException If object is not contained within the container and there is
+    /// no factory
+    ///     registered to create it
+    template <class T, class... TArgs>
+    std::shared_ptr<T> createByNameWithoutStoringShared
+        [[nodiscard]] (const std::string& name, TArgs... args)
+    {
+        const char* typeName = getType<T>();
+
+        if (m_registeredFactories.count(typeName))
+        {
+            // See if there is a factory that can create this object
+            const auto& holder = m_registeredFactories.at(typeName);
+            SharedFactory<T, TArgs...> factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
+            return std::shared_ptr<T>(factory(args...));
+        }
+
+        if (m_parent == nullptr)
+        {
+            using boost::format;
+            using boost::str;
+            static const format fmt("No registered factory exists which can create "
+                                    "this object. "
+                                    "Expected Holder Type = %1%, Name = %2%");
+            BOOST_THROW_EXCEPTION(IocException()
+                                  << StringInfo(str(format(fmt) % getType<T>() % name)));
+        }
+
+        return m_parent->createByNameWithoutStoring<T>(name, args...);
+    }    
 
     /// Creates an instance using a registered factory
     /// @tparam T The type of the instance
@@ -543,7 +589,7 @@ public:
             {
                 using boost::format;
                 using boost::str;
-                static const format fmt("Not registered factory exists which can create "
+                static const format fmt("No registered factory exists which can create "
                                         "this object. "
                                         "Expected Holder Type = %1%, Name = %2%");
                 BOOST_THROW_EXCEPTION(
