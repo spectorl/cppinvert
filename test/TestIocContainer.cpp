@@ -555,7 +555,7 @@ BOOST_AUTO_TEST_CASE(testBindInterface)
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
         // Do a bind instance where the container takes ownership of the object
-        iocContainer.bindInstance<IValWrapper, IntWrapper>(ref(a1));
+        iocContainer.bindInstance<IValWrapper>(ref(a1));
 
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 

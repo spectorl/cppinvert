@@ -293,22 +293,24 @@ public:
     template <class T>
     IocContainer& bindInstance(std::reference_wrapper<T> instance)
     {
-        return bindInstance<T>("", instance);
+        return bindInstance<T, T>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to the object and will
     /// not manage lifetime
     ///     as the shared_ptr will have a null deleter. To call this, use:
     ///     bindInstance(std::ref(instance)) or bindInstance(std:::cref(instance))
-    /// @tparam T The type of the instance
-    /// @tparam T2 The type of the instance
+    /// @tparam TBase The type of the instance
+    /// @tparam TDerived The type of the instance
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
-    template <class T, class T2 = T>
-    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
-        std::reference_wrapper<T2> instance)
+    template <
+        class TBase,
+        class TDerived,
+        typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
+    IocContainer& bindInstance(std::reference_wrapper<TDerived> instance)
     {
-        return bindInstance<T, T2>("", instance);
+        return bindInstance<TBase, TDerived>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to a pointer to be
@@ -356,8 +358,7 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
-        const std::string& name, value_wrapper<T> instance)
+    IocContainer& bindInstance(const std::string& name, value_wrapper<T> instance)
     {
         return bindValue(name, instance.move());
     }
@@ -387,23 +388,27 @@ public:
     IocContainer& bindInstance(const std::string& name,
                                std::reference_wrapper<T> instance)
     {
-        return bindInstance<T>(name, HolderPtr<T>(&instance.get(), nullDeleter_v<T>));
+        return bindInstanceInternal<T>(name,
+                                       HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
     /// object, using the copy
     ///     constructor and will manage lifetime via the Holder (shared_ptr)
-    /// @tparam T The type of the instance
-    /// @tparam T2 The type of the instance
+    /// @tparam TBase The base type of the instance
+    /// @tparam TDerived The type of the instance
     /// @param[in] name The name of the instance
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
-    template <class T, class T2>
-    std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
-        const std::string& name, std::reference_wrapper<T2> instance)
+    template <
+        class TBase,
+        class TDerived,
+        typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
+    IocContainer& bindInstance(const std::string& name,
+                               std::reference_wrapper<TDerived> instance)
     {
-        return bindInstanceInternal<T>(name,
-                                       HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
+        return bindInstanceInternal<TBase>(
+            name, HolderPtr<TBase>{&instance.get(), nullDeleter_v<TBase>});
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
