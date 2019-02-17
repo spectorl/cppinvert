@@ -37,7 +37,7 @@ template <class T>
 struct value_wrapper
 {
     /// Constructor which moves the value to a local member, to be moved later
-    value_wrapper(T val)
+    explicit value_wrapper(T val)
         : value_(std::move(val))
     {
     }
