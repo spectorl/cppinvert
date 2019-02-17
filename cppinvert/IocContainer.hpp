@@ -31,32 +31,43 @@ public:
 };
 
 /// Used to disambiguate a value that is meant to be handled as a value that will be
-/// copied
+/// copied or moved
 /// @tparam T The type in the value wrapper
 template <class T>
 struct value_wrapper
 {
-    value_wrapper(const T& val)
-        : value_(val)
+    /// Constructor which moves the value to a local member, to be moved later
+    value_wrapper(T val)
+        : value_(std::move(val))
     {
     }
 
-    const T& get() const
+    /// Method that moves the internal member
+    T&& move()
     {
-        return value_;
+        return std::move(value_);
     }
 
 private:
-    const T& value_;
+    T value_;
 };
 
 /// Helper for value wrappers similar to ref for reference_wrappers
 /// @tparam T The type in the value wrapper
 /// @returns The returned value wrapper
 template <class T>
-inline value_wrapper<T> val(const T& value)
+inline value_wrapper<T> val(T value)
 {
-    return value_wrapper<T>(value);
+    return value_wrapper<T>(std::move(value));
+}
+
+/// Helper for moveable value wrappers similar to ref for reference_wrappers
+/// @tparam T The type in the value wrapper
+/// @returns The returned value wrapper
+template <class T>
+inline value_wrapper<T> mval(T& value)
+{
+    return val(std::move(value));
 }
 
 template <class T>
@@ -99,7 +110,7 @@ public:
         // By default, bind a factory any time an IOC container is requested
         Factory<IocContainer> factoryFunc = [this]() {
             // Reference parent for factories
-            std::unique_ptr<IocContainer> container(new IocContainer());
+            auto container{std::make_unique<IocContainer>()};
             container->m_parent = this;
 
             return container;
@@ -226,7 +237,7 @@ public:
     std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
         value_wrapper<T> instance)
     {
-        return bindInstance<T>("", instance);
+        return bindInstance<T>("", std::move(instance));
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -236,10 +247,9 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
-        const T& instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(T instance)
     {
-        return bindValue<T>("", instance);
+        return bindValue<T>("", std::move(instance));
     }
 
     /// Registers an instance for a given type. This version refers to the object and will
@@ -252,7 +262,7 @@ public:
     template <class T>
     IocContainer& bindInstance(std::reference_wrapper<T> instance)
     {
-        return bindInstance<T>("", instance);
+        return bindInstance<T>("", std::move(instance));
     }
 
     /// Registers an instance for a given type. This version refers to the object and will
@@ -318,7 +328,7 @@ public:
     std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
         const std::string& name, value_wrapper<T> instance)
     {
-        return bindValue(name, instance.get());
+        return bindValue(name, instance.move());
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -332,7 +342,7 @@ public:
     std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
         const std::string& name, const T& instance)
     {
-        return bindInstance<T>(name, HolderPtr<T>(new T(instance)));
+        return bindInstance<T>(name, std::make_shared<T>(instance));
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -521,7 +531,8 @@ public:
         {
             // See if there is a factory that can create this object
             const auto& holder = m_registeredFactories.at(typeName);
-            SharedFactory<T, TArgs...> factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
+            SharedFactory<T, TArgs...> factory =
+                boost::any_cast<SharedFactory<T, TArgs...>>(holder);
             return std::shared_ptr<T>(factory(args...));
         }
 
@@ -537,7 +548,7 @@ public:
         }
 
         return m_parent->createByNameWithoutStoring<T>(name, args...);
-    }    
+    }
 
     /// Creates an instance using a registered factory
     /// @tparam T The type of the instance
@@ -802,8 +813,10 @@ private:
     using RegisteredFactories = std::unordered_map<std::string, boost::any>;
 
     using Holder = boost::any;
+
     template <class T>
     using HolderPtr = std::shared_ptr<T>;
+
     using InnerRegisteredInstanceMap = std::unordered_map<std::string, Holder>;
     using RegisteredInstances =
         std::unordered_map<std::string, InnerRegisteredInstanceMap>;
