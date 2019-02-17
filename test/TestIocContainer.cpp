@@ -16,6 +16,8 @@ using namespace std;
 using boost::format;
 using boost::str;
 
+static constexpr const bool printObjectTracker = false;
+
 // This structure can be used to help track when the objects are created or destroyed,
 // so we can prove that the iocContainer is behaving correctly
 class ObjectTracker
@@ -23,7 +25,11 @@ class ObjectTracker
 public:
     void onCreated(void* ptr)
     {
-        std::cout << "Creating " << ptr << std::endl;
+        if (printObjectTracker)
+        {
+            std::cout << "Creating " << ptr << std::endl;
+        }
+
         BOOST_CHECK_MESSAGE(!activeObjects.count(ptr),
                             str(format("Expected to find no instances of ptr %1% "
                                        "in active objects at this point") %
@@ -33,7 +39,11 @@ public:
 
     void onDestroyed(void* ptr)
     {
-        std::cout << "Destroying " << ptr << std::endl;
+        if (printObjectTracker)
+        {
+            std::cout << "Destroying " << ptr << std::endl;
+        }
+
         BOOST_CHECK_MESSAGE(activeObjects.count(ptr) == 1,
                             str(format("Expected to find exactly one instance of ptr "
                                        "%1% in active objects at this point") %

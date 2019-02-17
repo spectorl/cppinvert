@@ -223,7 +223,7 @@ public:
         Lock lock(m_mutex);
 
         const char* typeName = getType<T>();
-        m_registeredFactories.emplace(typeName, factory);
+        m_registeredFactories.insert_or_assign(typeName, factory);
         return *this;
     }
 
@@ -413,7 +413,7 @@ public:
 
         const char* typeName = getType<T>();
         auto& innerMap = m_registeredInstances[typeName];
-        innerMap.emplace(name, Holder(instance));
+        innerMap.insert_or_assign(name, Holder(instance));
         return *this;
     }
 
