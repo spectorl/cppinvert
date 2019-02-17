@@ -3,6 +3,7 @@
 #include <functional>
 #include <random>
 #include <thread>
+#include <unordered_set>
 
 #include <boost/test/unit_test.hpp>
 
@@ -13,6 +14,37 @@ class Fixture
 {
 public:
     IocContainer iocContainer;
+};
+
+// This structure can be used to help track when the objects are created or destroyed,
+// so we can prove that the iocContainer is behaving correctly
+class ObjectTracker
+{
+public:
+    void onCreated(void* ptr)
+    {
+        BOOST_CHECK_EQUAL(activeObjects.count(ptr), 0);
+        activeObjects.insert(ptr);
+    }
+
+    void onDestroyed(void* ptr)
+    {
+        BOOST_CHECK(activeObjects.count(ptr));
+        activeObjects.erase(ptr);
+    }
+
+    void* firstObj()
+    {
+        return *(activeObjects.begin());
+    }
+
+    size_t size() const
+    {
+        return activeObjects.size();
+    }
+
+private:
+    unordered_set<void*> activeObjects;
 };
 
 BOOST_FIXTURE_TEST_SUITE(TestIocContainer, Fixture)
@@ -31,10 +63,8 @@ BOOST_AUTO_TEST_CASE(checkUnnamedConstruction)
     const char* v3 = "HELLO";
     string v4 = "GOODBYE";
 
-    iocContainer.bindInstance(val(v1))
-                .bindInstance(val(v2))
-                .bindInstance(v3)
-                .bindInstance(val(v4));
+    iocContainer.bindInstance(val(v1)).bindInstance(val(v2)).bindInstance(v3).bindInstance(
+        val(v4));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 4);
     BOOST_CHECK(iocContainer.contains<float>());
@@ -55,9 +85,9 @@ BOOST_AUTO_TEST_CASE(checkSubContainerConstruction)
     IocContainer subContainer3;
 
     iocContainer.bindInstance("sub1", ref(subContainer1))
-                .bindInstance("sub2", ref(subContainer2))
-                .bindInstance("sub3", ref(subContainer3))
-                .bindInstance("int", val(3));
+        .bindInstance("sub2", ref(subContainer2))
+        .bindInstance("sub3", ref(subContainer3))
+        .bindInstance("int", val(3));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 4);
     BOOST_CHECK(iocContainer.contains<IocContainer>("sub1"));
@@ -80,11 +110,9 @@ BOOST_AUTO_TEST_CASE(testIocContainerInThread)
 
     IocContainer subIocContainer;
     iocContainer.bindInstance(testFactory, ref(subIocContainer));
-    subIocContainer.bindInstance("ip", val(ip)).
-        bindInstance("port", val(port));
+    subIocContainer.bindInstance("ip", val(ip)).bindInstance("port", val(port));
 
-     auto testInThread = [this, &subIocContainer]()
-     {
+    auto testInThread = [this, &subIocContainer]() {
         BOOST_CHECK(iocContainer.contains<IocContainer>(testFactory));
 
         auto& subContainer = iocContainer.getRef<IocContainer>(testFactory);
@@ -92,25 +120,25 @@ BOOST_AUTO_TEST_CASE(testIocContainerInThread)
         BOOST_CHECK(subContainer.contains<size_t>("port"));
         BOOST_CHECK_EQUAL(subContainer.get<string>("ip"), ip);
         BOOST_CHECK_EQUAL(subContainer.get<size_t>("port"), port);
-     };
+    };
 
-     thread t(testInThread);
-     t.join();
+    thread t(testInThread);
+    t.join();
 }
 
 BOOST_AUTO_TEST_CASE(testIocContainerFactory)
 {
     std::string str;
 
-    iocContainer.getRef<IocContainer>("sub1").
-        bindInstance<int>("3", val(3)).
-        bindInstance<char>("a", val('a')).
-        bindInstance<char>("b", val('b'));
-    iocContainer.getRef<IocContainer>("sub2").
-        bindInstance<int>("4", val(4)).
-        bindInstance<char>("z", val('z')).
-        bindValue<int>("5", 5).
-        bindInstance<std::string>(ref(str));
+    iocContainer.getRef<IocContainer>("sub1")
+        .bindInstance<int>("3", val(3))
+        .bindInstance<char>("a", val('a'))
+        .bindInstance<char>("b", val('b'));
+    iocContainer.getRef<IocContainer>("sub2")
+        .bindInstance<int>("4", val(4))
+        .bindInstance<char>("z", val('z'))
+        .bindValue<int>("5", 5)
+        .bindInstance<std::string>(ref(str));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 2);
     BOOST_CHECK_EQUAL(iocContainer.size(true), 9);
@@ -125,7 +153,8 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactory)
     BOOST_CHECK_EQUAL(*iocContainer.getRef<IocContainer>("sub2").getPtr<int>("5"), 5);
     BOOST_CHECK_EQUAL(iocContainer.getRef<IocContainer>("sub2").getRef<int>("5"), 5);
     BOOST_CHECK_EQUAL(*iocContainer.getRef<IocContainer>("sub2").getShared<int>("5"), 5);
-    BOOST_CHECK_EQUAL(&iocContainer.getRef<IocContainer>("sub2").getRef<std::string>(), &str);
+    BOOST_CHECK_EQUAL(&iocContainer.getRef<IocContainer>("sub2").getRef<std::string>(),
+                      &str);
 }
 
 BOOST_AUTO_TEST_CASE(testIocContainerFactoryMultiples)
@@ -133,13 +162,18 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryMultiples)
     class ISomething
     {
     public:
-        virtual ~ISomething() {}
+        virtual ~ISomething()
+        {
+        }
     };
 
     class SomethingElse : virtual public ISomething
-    {};
+    {
+    };
 
-    IocContainer::Factory<ISomething> factory = []() { return std::unique_ptr<ISomething>(new SomethingElse()); };
+    IocContainer::Factory<ISomething> factory = []() {
+        return std::unique_ptr<ISomething>(new SomethingElse());
+    };
     iocContainer.registerFactory<ISomething>(factory);
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 0);
@@ -167,13 +201,18 @@ BOOST_AUTO_TEST_CASE(testIocContainerSharedFactoryMultiples)
     class ISomething
     {
     public:
-        virtual ~ISomething() {}
+        virtual ~ISomething()
+        {
+        }
     };
 
     class SomethingElse : virtual public ISomething
-    {};
+    {
+    };
 
-    IocContainer::SharedFactory<ISomething> factory = []() { return std::shared_ptr<ISomething>(new SomethingElse()); };
+    IocContainer::SharedFactory<ISomething> factory = []() {
+        return std::shared_ptr<ISomething>(new SomethingElse());
+    };
     iocContainer.registerFactory<ISomething>(factory);
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 0);
@@ -201,24 +240,27 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactoryTemplateParameterPack)
     class IObject
     {
     public:
-        virtual ~IObject() {}
+        virtual ~IObject()
+        {
+        }
     };
 
     class Point : virtual public IObject
     {
     public:
-        Point(int x, int y) :
-            m_x(x), m_y(y)
+        Point(int x, int y)
+            : m_x(x)
+            , m_y(y)
         {
-
         }
 
         int m_x;
         int m_y;
     };
 
-    IocContainer::Factory<IObject, int, int> factory =
-        [](int x, int y) { return std::unique_ptr<IObject>(new Point(x, y)); };
+    IocContainer::Factory<IObject, int, int> factory = [](int x, int y) {
+        return std::unique_ptr<IObject>(new Point(x, y));
+    };
     iocContainer.registerFactory<IObject>(factory);
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 0);
@@ -235,24 +277,27 @@ BOOST_AUTO_TEST_CASE(testIocContainerSharedFactoryTemplateParameterPack)
     class IObject
     {
     public:
-        virtual ~IObject() {}
+        virtual ~IObject()
+        {
+        }
     };
 
     class Point : virtual public IObject
     {
     public:
-        Point(int x, int y) :
-            m_x(x), m_y(y)
+        Point(int x, int y)
+            : m_x(x)
+            , m_y(y)
         {
-
         }
 
         int m_x;
         int m_y;
     };
 
-    IocContainer::SharedFactory<IObject, int, int> factory =
-        [](int x, int y) { return std::unique_ptr<IObject>(new Point(x, y)); };
+    IocContainer::SharedFactory<IObject, int, int> factory = [](int x, int y) {
+        return std::unique_ptr<IObject>(new Point(x, y));
+    };
     iocContainer.registerFactory<IObject>(factory);
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 0);
@@ -271,9 +316,9 @@ BOOST_AUTO_TEST_CASE(testSubContainerRetrieval)
     static const std::string ip("127.0.0.1");
     static const std::size_t port(9999);
 
-    iocContainer.getRef<IocContainer>(uuid).
-        bindValue<std::string>("ip", ip).
-        bindValue<std::size_t>("port", port);
+    iocContainer.getRef<IocContainer>(uuid)
+        .bindValue<std::string>("ip", ip)
+        .bindValue<std::size_t>("port", port);
 
     IocContainer& subIocContainer = iocContainer.getRef<IocContainer>(uuid2);
 
@@ -291,10 +336,7 @@ BOOST_AUTO_TEST_CASE(testBindInstanceAndThenEraseInstance)
     const char* v3 = "HELLO";
     string v4 = "GOODBYE";
 
-    iocContainer.bindValue(v1)
-                .bindValue(v2)
-                .bindInstance(v3)
-                .bindValue(v4);
+    iocContainer.bindValue(v1).bindValue(v2).bindInstance(v3).bindValue(v4);
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 4);
     BOOST_CHECK(iocContainer.contains<float>());
@@ -314,15 +356,13 @@ BOOST_AUTO_TEST_CASE(testPolymorphism)
 {
     struct A
     {
-        A() 
+        A()
         {
-
         }
 
-        explicit A(int p_x) :
-            x(p_x)
+        explicit A(int p_x)
+            : x(p_x)
         {
-            
         }
 
         int x{0};
@@ -330,31 +370,29 @@ BOOST_AUTO_TEST_CASE(testPolymorphism)
 
     struct B : public A
     {
-        B() 
+        B()
         {
-
         }
 
-        explicit B(int p_x, int p_y) :
-            A(p_x), y(p_y)
+        explicit B(int p_x, int p_y)
+            : A(p_x)
+            , y(p_y)
         {
-            
         }
 
         int y{0};
     };
 
-    struct C: public A
+    struct C : public A
     {
-        C() 
+        C()
         {
-
         }
 
-        explicit C(int p_x, int p_z) :
-            A(p_x), z(p_z)
+        explicit C(int p_x, int p_z)
+            : A(p_x)
+            , z(p_z)
         {
-            
         }
 
         int z{0};
@@ -365,10 +403,10 @@ BOOST_AUTO_TEST_CASE(testPolymorphism)
     C c{4, 6};
 
     iocContainer.bindInstance("a_a", ref(a))
-                .bindInstance("b_b", ref(b))
-                .bindInstance<A>("b_a", ref(b))
-                .bindInstance("c_c", ref(c))
-                .bindInstance<A>("c_a", ref(c));
+        .bindInstance("b_b", ref(b))
+        .bindInstance<A>("b_a", ref(b))
+        .bindInstance("c_c", ref(c))
+        .bindInstance<A>("c_a", ref(c));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 5);
     BOOST_CHECK(iocContainer.contains<A>("a_a"));
@@ -384,6 +422,46 @@ BOOST_AUTO_TEST_CASE(testPolymorphism)
     BOOST_CHECK_EQUAL(&b, &iocContainer.getRef<A>("b_a"));
     BOOST_CHECK_EQUAL(&c, &iocContainer.getRef<C>("c_c"));
     BOOST_CHECK_EQUAL(&c, &iocContainer.getRef<A>("c_a"));
+}
+
+BOOST_AUTO_TEST_CASE(testReBindInstance)
+{
+    struct A
+    {
+        A(int newVal, ObjectTracker& tracker)
+            : val(newVal)
+            , objTracker(tracker)
+        {
+            objTracker.onCreated(this);
+        }
+
+        ~A()
+        {
+            objTracker.onDestroyed(this);
+        }
+
+        int val;
+        ObjectTracker& objTracker;
+    };
+
+    ObjectTracker objTracker;
+
+    A a1{3, objTracker};
+    A a2{4, objTracker};
+
+    BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+    // Do a bind instance where the container takes ownership of the object
+    iocContainer.bindInstance(move(a1));
+
+    BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+    void* firstObj = objTracker.firstObj();
+
+    iocContainer.bindInstance(move(a2));
+
+    BOOST_CHECK_EQUAL(objTracker.size(), 1);
+    BOOST_CHECK_NE(objTracker.firstObj(), firstObj);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
