@@ -34,12 +34,27 @@ public:
 /// copied or moved
 /// @tparam T The type in the value wrapper
 template <class T>
-struct value_wrapper
+struct value_wrapper : boost::noncopyable
 {
     /// Constructor which moves the value to a local member, to be moved later
     explicit value_wrapper(T val)
         : value_(std::move(val))
     {
+    }
+
+    value_wrapper(const value_wrapper<T>& rhs) = delete;
+
+    value_wrapper(value_wrapper<T>&& rhs)
+        : value_(std::move(rhs.value_))
+    {
+    }
+
+    value_wrapper<T>& operator=(const value_wrapper<T>& rhs) = delete;
+
+    value_wrapper<T>& operator=(value_wrapper<T>&& rhs)
+    {
+        value_ = std::move(rhs.value_);
+        return *this;
     }
 
     /// Method that moves the internal member
@@ -83,11 +98,27 @@ struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type
 template <class T>
 inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
 
+template <class T>
+struct NullDeleter
+{
+    using Deleter = void(T*);
+
+    static constexpr void deleter(T* ptr)
+    {
+    }
+
+    static constexpr Deleter* value = &deleter;
+};
+
+/// Helper for a null deleter into a smarter pointer
+template <class T>
+static constexpr auto nullDeleter_v = NullDeleter<T>::value;
+
 /// @brief Implementation of an IOC container for C++ code
 ///
 /// A container that supports holding any type of object, as well as managing the
-/// specified lifetime. In addition, it can create objects if you register the appropriate
-/// factory with it. Note: The IOC container is also thread-safe
+/// specified lifetime. In addition, it can create objects if you register the
+/// appropriate factory with it. Note: The IOC container is also thread-safe
 class IocContainer : private boost::noncopyable
 {
 public:
@@ -262,7 +293,7 @@ public:
     template <class T>
     IocContainer& bindInstance(std::reference_wrapper<T> instance)
     {
-        return bindInstance<T>("", std::move(instance));
+        return bindInstance<T>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to the object and will
@@ -277,7 +308,7 @@ public:
     std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
         std::reference_wrapper<T2> instance)
     {
-        return bindInstance<T>("", instance);
+        return bindInstance<T, T2>("", instance);
     }
 
     /// Registers an instance for a given type. This version refers to a pointer to be
@@ -356,7 +387,7 @@ public:
     IocContainer& bindInstance(const std::string& name,
                                std::reference_wrapper<T> instance)
     {
-        return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
+        return bindInstance<T>(name, HolderPtr<T>(&instance.get(), nullDeleter_v<T>));
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -371,7 +402,8 @@ public:
     std::enable_if_t<!std::is_same_v<T, T2>, IocContainer&> bindInstance(
         const std::string& name, std::reference_wrapper<T2> instance)
     {
-        return bindInstance<T>(name, HolderPtr<T>(&instance.get(), [](T*) {}));
+        return bindInstanceInternal<T>(name,
+                                       HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -384,7 +416,7 @@ public:
     template <class T>
     IocContainer& bindInstance(const std::string& name, T* instance)
     {
-        return bindInstance<T>(name, HolderPtr<T>(instance, [](T*) {}));
+        return bindInstanceInternal<T>(name, HolderPtr<T>(instance, nullDeleter_v<T>));
     }
 
     /// Registers an instance for a given type. This version will take in a unique_ptr,
@@ -397,7 +429,7 @@ public:
     template <class T>
     IocContainer& bindInstance(const std::string& name, std::unique_ptr<T> instance)
     {
-        return bindInstance<T>(name, std::shared_ptr<T>(std::move(instance)));
+        return bindInstanceInternal<T>(name, std::move(instance));
     }
 
     /// Registers an instance for a given type. This version will take in a shared_ptr and
@@ -409,12 +441,7 @@ public:
     template <class T>
     IocContainer& bindInstance(const std::string& name, std::shared_ptr<T> instance)
     {
-        Lock lock(m_mutex);
-
-        const char* typeName = getType<T>();
-        auto& innerMap = m_registeredInstances[typeName];
-        innerMap.insert_or_assign(name, Holder(instance));
-        return *this;
+        return bindInstanceInternal<T>(name, std::move(instance));
     }
 
     /// Utility method to erase an existing instance from the container
@@ -823,6 +850,25 @@ private:
 
     using Mutex = std::recursive_mutex;
     using Lock = std::unique_lock<Mutex>;
+
+    /// Registers an instance for a given type. This version will take in a
+    /// holder pointer, which will become a shared_ptr if it isn't already and share
+    /// lifetime with any other shared_ptrs that reference it
+    /// @tparam T The type of the instance
+    /// @tparam T2 The wrapper around the instance
+    /// @param[in] name The name of the instance
+    /// @param[in] instance The instance to be held within the container
+    /// @returnsReference to the IocContainer, for chaining operations
+    template <class T>
+    IocContainer& bindInstanceInternal(std::string name, HolderPtr<T> instance)
+    {
+        Lock lock(m_mutex);
+
+        const char* typeName = getType<T>();
+        auto& innerMap = m_registeredInstances[typeName];
+        innerMap.insert_or_assign(name, Holder(std::move(instance)));
+        return *this;
+    }
 
     // Helper to get types in a consistent way
     template <class T>

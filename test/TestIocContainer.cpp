@@ -70,6 +70,8 @@ struct IValWrapper
     virtual ~IValWrapper()
     {
     }
+
+    virtual bool checkPtr(void* ptr) const = 0;
 };
 
 /// This structure wraps values, while also notifying the object tracker
@@ -100,6 +102,11 @@ struct ValWrapper : virtual public IValWrapper
     virtual ~ValWrapper()
     {
         objTracker.onDestroyed(this);
+    }
+
+    virtual bool checkPtr(void* ptr) const override
+    {
+        return this == ptr;
     }
 
     T val;
@@ -536,14 +543,19 @@ BOOST_AUTO_TEST_CASE(testReBindInstance)
 
 BOOST_AUTO_TEST_CASE(testBindInterface)
 {
+    void* a1Ptr{nullptr};
+
     // Put in scope, so moved instance of a1 is removed from tracker before checking
     {
         IntWrapper a1{3, objTracker};
+        a1Ptr = &a1;
+
+        BOOST_CHECK(a1.checkPtr(a1Ptr));
 
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
         // Do a bind instance where the container takes ownership of the object
-        iocContainer.bindInstance<IValWrapper>(ref(a1));
+        iocContainer.bindInstance<IValWrapper, IntWrapper>(ref(a1));
 
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
@@ -565,6 +577,8 @@ BOOST_AUTO_TEST_CASE(testBindInterface)
                           IocException);
         BOOST_CHECK_THROW(IValWrapper& aRef = iocContainer.getRef<IntWrapper>(),
                           IocException);
+
+        BOOST_CHECK(a1.checkPtr(a1Ptr));
     }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 0);
