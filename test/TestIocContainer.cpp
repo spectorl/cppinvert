@@ -544,9 +544,35 @@ BOOST_AUTO_TEST_CASE(testBindInterface)
 
         // Do a bind instance where the container takes ownership of the object
         iocContainer.bindInstance<IValWrapper>(ref(a1));
+
+        BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+        BOOST_CHECK_NO_THROW(IValWrapper& aBaseRef = iocContainer.getRef<IValWrapper>());
+        BOOST_CHECK_THROW(IValWrapper& aRef = iocContainer.getRef<IntWrapper>(),
+                          IocException);
+
+        IValWrapper& aBaseRef = iocContainer.getRef<IValWrapper>();
+        IntWrapper& aRef = dynamic_cast<IntWrapper&>(aBaseRef);
+
+        BOOST_CHECK_EQUAL(a1.val, aRef.val);
+
+        iocContainer.eraseInstance<IValWrapper>();
+
+        // This should not cause the object tracker to fire, since it's a reference
+        BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+        BOOST_CHECK_THROW(IValWrapper& aBaseRef = iocContainer.getRef<IValWrapper>(),
+                          IocException);
+        BOOST_CHECK_THROW(IValWrapper& aRef = iocContainer.getRef<IntWrapper>(),
+                          IocException);
     }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 0);
+
+    BOOST_CHECK_THROW(IValWrapper& aBaseRef = iocContainer.getRef<IValWrapper>(),
+                      IocException);
+    BOOST_CHECK_THROW(IValWrapper& aRef = iocContainer.getRef<IntWrapper>(),
+                      IocException);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
