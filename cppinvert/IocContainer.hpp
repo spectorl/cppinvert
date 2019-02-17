@@ -223,7 +223,7 @@ public:
         Lock lock(m_mutex);
 
         const char* typeName = getType<T>();
-        m_registeredFactories.insert(std::make_pair(typeName, factory));
+        m_registeredFactories.emplace(typeName, factory);
         return *this;
     }
 
@@ -340,9 +340,9 @@ public:
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
     std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
-        const std::string& name, const T& instance)
+        const std::string& name, T instance)
     {
-        return bindInstance<T>(name, std::make_shared<T>(instance));
+        return bindInstance<T>(name, std::make_shared<T>(std::move(instance)));
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -413,7 +413,7 @@ public:
 
         const char* typeName = getType<T>();
         auto& innerMap = m_registeredInstances[typeName];
-        innerMap.insert({name, Holder(instance)});
+        innerMap.emplace(name, Holder(instance));
         return *this;
     }
 

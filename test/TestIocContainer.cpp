@@ -1,20 +1,20 @@
 #include <cppinvert/IocContainer.hpp>
 
 #include <functional>
+#include <iostream>
 #include <random>
 #include <thread>
 #include <unordered_set>
+
+#include <boost/format.hpp>
 
 #include <boost/test/unit_test.hpp>
 
 using namespace cppinvert;
 using namespace std;
 
-class Fixture
-{
-public:
-    IocContainer iocContainer;
-};
+using boost::format;
+using boost::str;
 
 // This structure can be used to help track when the objects are created or destroyed,
 // so we can prove that the iocContainer is behaving correctly
@@ -23,13 +23,21 @@ class ObjectTracker
 public:
     void onCreated(void* ptr)
     {
-        BOOST_CHECK_EQUAL(activeObjects.count(ptr), 0);
+        std::cout << "Creating " << ptr << std::endl;
+        BOOST_CHECK_MESSAGE(!activeObjects.count(ptr),
+                            str(format("Expected to find no instances of ptr %1% "
+                                       "in active objects at this point") %
+                                ptr));
         activeObjects.insert(ptr);
     }
 
     void onDestroyed(void* ptr)
     {
-        BOOST_CHECK(activeObjects.count(ptr));
+        std::cout << "Destroying " << ptr << std::endl;
+        BOOST_CHECK_MESSAGE(activeObjects.count(ptr) == 1,
+                            str(format("Expected to find exactly one instance of ptr "
+                                       "%1% in active objects at this point") %
+                                ptr));
         activeObjects.erase(ptr);
     }
 
@@ -45,6 +53,49 @@ public:
 
 private:
     unordered_set<void*> activeObjects;
+};
+
+/// This structure wraps values, while also notifying the object tracker
+template <class T>
+struct ValWrapper
+{
+    ValWrapper(T newVal, ObjectTracker& tracker)
+        : val(move(newVal))
+        , objTracker(tracker)
+    {
+        objTracker.onCreated(this);
+    }
+
+    ValWrapper(const ValWrapper<T>& rhs)
+        : val(rhs.val)
+        , objTracker(rhs.objTracker)
+    {
+        objTracker.onCreated(this);
+    }
+
+    ValWrapper(ValWrapper<T>&& rhs)
+        : val(move(rhs.val))
+        , objTracker(rhs.objTracker)
+    {
+        objTracker.onCreated(this);
+    }
+
+    ~ValWrapper()
+    {
+        objTracker.onDestroyed(this);
+    }
+
+    T val;
+    ObjectTracker& objTracker;
+};
+
+using IntWrapper = ValWrapper<int>;
+
+class Fixture
+{
+public:
+    ObjectTracker objTracker;
+    IocContainer iocContainer;
 };
 
 BOOST_FIXTURE_TEST_SUITE(TestIocContainer, Fixture)
@@ -424,41 +475,43 @@ BOOST_AUTO_TEST_CASE(testPolymorphism)
     BOOST_CHECK_EQUAL(&c, &iocContainer.getRef<A>("c_a"));
 }
 
-BOOST_AUTO_TEST_CASE(testReBindInstance)
+BOOST_AUTO_TEST_CASE(testMoveInstance)
 {
-    struct A
+    // Put in scope, so moved instance of a1 is removed from tracker before checking
     {
-        A(int newVal, ObjectTracker& tracker)
-            : val(newVal)
-            , objTracker(tracker)
-        {
-            objTracker.onCreated(this);
-        }
+        IntWrapper a1{3, objTracker};
 
-        ~A()
-        {
-            objTracker.onDestroyed(this);
-        }
+        BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
-        int val;
-        ObjectTracker& objTracker;
-    };
-
-    ObjectTracker objTracker;
-
-    A a1{3, objTracker};
-    A a2{4, objTracker};
+        // Do a bind instance where the container takes ownership of the object
+        iocContainer.bindInstance(mval(a1));
+    }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
+}
 
-    // Do a bind instance where the container takes ownership of the object
-    iocContainer.bindInstance(move(a1));
+BOOST_AUTO_TEST_CASE(testReBindInstance)
+{
+    // Put in scope, so moved instance of a1 is removed from tracker before checking
+    {
+        IntWrapper a1{3, objTracker};
+
+        BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+        // Do a bind instance where the container takes ownership of the object
+        iocContainer.bindInstance(mval(a1));
+    }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
     void* firstObj = objTracker.firstObj();
 
-    iocContainer.bindInstance(move(a2));
+    // Put in scope, so moved instance of a2 is removed from tracker before checking
+    {
+        IntWrapper a2{4, objTracker};
+
+        iocContainer.bindInstance(mval(a2));
+    }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
     BOOST_CHECK_NE(objTracker.firstObj(), firstObj);
