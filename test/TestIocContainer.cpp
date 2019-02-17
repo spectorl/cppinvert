@@ -65,9 +65,16 @@ private:
     unordered_set<void*> activeObjects;
 };
 
+struct IValWrapper
+{
+    virtual ~IValWrapper()
+    {
+    }
+};
+
 /// This structure wraps values, while also notifying the object tracker
 template <class T>
-struct ValWrapper
+struct ValWrapper : virtual public IValWrapper
 {
     ValWrapper(T newVal, ObjectTracker& tracker)
         : val(move(newVal))
@@ -90,7 +97,7 @@ struct ValWrapper
         objTracker.onCreated(this);
     }
 
-    ~ValWrapper()
+    virtual ~ValWrapper()
     {
         objTracker.onDestroyed(this);
     }
@@ -525,6 +532,21 @@ BOOST_AUTO_TEST_CASE(testReBindInstance)
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
     BOOST_CHECK_NE(objTracker.firstObj(), firstObj);
+}
+
+BOOST_AUTO_TEST_CASE(testBindInterface)
+{
+    // Put in scope, so moved instance of a1 is removed from tracker before checking
+    {
+        IntWrapper a1{3, objTracker};
+
+        BOOST_CHECK_EQUAL(objTracker.size(), 1);
+
+        // Do a bind instance where the container takes ownership of the object
+        iocContainer.bindInstance<IValWrapper>(ref(a1));
+    }
+
+    BOOST_CHECK_EQUAL(objTracker.size(), 0);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
