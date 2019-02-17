@@ -30,26 +30,46 @@ public:
     }
 };
 
+template <class T>
+struct is_reference_wrapper : std::false_type
+{
+};
+
+template <class T>
+struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type
+{
+};
+
+template <class T>
+inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
+
 /// Used to disambiguate a value that is meant to be handled as a value that will be
 /// copied or moved
 /// @tparam T The type in the value wrapper
 template <class T>
-struct value_wrapper : boost::noncopyable
+class value_wrapper : private boost::noncopyable
 {
+public:
+    using type = T;
+
     /// Constructor which moves the value to a local member, to be moved later
-    explicit value_wrapper(T val)
-        : value_(std::move(val))
+    template <typename std::enable_if_t<!is_reference_wrapper_v<T>, T>* = nullptr>
+    explicit value_wrapper(T&& val)
+        : value_(val)
     {
     }
 
-    value_wrapper(const value_wrapper<T>& rhs) = delete;
+    template <typename std::enable_if_t<!is_reference_wrapper_v<T>, T>* = nullptr>
+    explicit value_wrapper(const T& val)
+        : value_(val)
+    {
+    }
 
+    template <typename std::enable_if_t<!is_reference_wrapper_v<T>, T>* = nullptr>
     value_wrapper(value_wrapper<T>&& rhs)
         : value_(std::move(rhs.value_))
     {
     }
-
-    value_wrapper<T>& operator=(const value_wrapper<T>& rhs) = delete;
 
     value_wrapper<T>& operator=(value_wrapper<T>&& rhs)
     {
@@ -86,17 +106,20 @@ inline value_wrapper<T> mval(T& value)
 }
 
 template <class T>
-struct is_reference_wrapper : std::false_type
+struct is_value_wrapper : std::false_type
 {
 };
 
 template <class T>
-struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type
+struct is_value_wrapper<value_wrapper<T>> : std::true_type
 {
 };
 
 template <class T>
-inline constexpr bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
+inline constexpr bool is_value_wrapper_v = is_value_wrapper<T>::value;
+
+template <class T>
+inline constexpr bool is_wrapped_v = is_value_wrapper_v<T> || is_reference_wrapper_v<T>;
 
 template <class T>
 struct NullDeleter
@@ -133,16 +156,16 @@ public:
     /// Creates the IOC container and also defaults to registering a factory of an
     /// IOC container, so that sub-containers may be created upon request
     IocContainer()
-        : m_parent(nullptr)
-        , m_registeredFactories()
-        , m_registeredInstances()
-        , m_mutex()
+        : parent_(nullptr)
+        , registeredFactories_()
+        , registeredInstances_()
+        , mutex_()
     {
         // By default, bind a factory any time an IOC container is requested
         Factory<IocContainer> factoryFunc = [this]() {
             // Reference parent for factories
             auto container{std::make_unique<IocContainer>()};
-            container->m_parent = this;
+            container->parent_ = this;
 
             return container;
         };
@@ -153,10 +176,10 @@ public:
     /// Move constructor
     /// @param other The IOC container to take resources from
     IocContainer(IocContainer&& other)
-        : m_parent(std::move(other.m_parent))
-        , m_registeredFactories(std::move(other.m_registeredFactories))
-        , m_registeredInstances(std::move(other.m_registeredInstances))
-        , m_mutex()
+        : parent_(std::move(other.parent_))
+        , registeredFactories_(std::move(other.registeredFactories_))
+        , registeredInstances_(std::move(other.registeredInstances_))
+        , mutex_()
     {
     }
 
@@ -172,9 +195,9 @@ public:
             return *this;
         }
 
-        m_parent = std::move(other.m_parent);
-        m_registeredFactories = std::move(other.m_registeredFactories);
-        m_registeredInstances = std::move(other.m_registeredInstances);
+        parent_ = std::move(other.parent_);
+        registeredFactories_ = std::move(other.registeredFactories_);
+        registeredInstances_ = std::move(other.registeredInstances_);
 
         return *this;
     }
@@ -191,11 +214,11 @@ public:
     ///     snapshot for that moment in time
     std::size_t size [[nodiscard]] (bool recursive = false) const
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         std::size_t size = 0;
 
-        for (const auto& item : m_registeredInstances)
+        for (const auto& item : registeredInstances_)
         {
             size += item.second.size();
         }
@@ -204,9 +227,9 @@ public:
         {
             const char* typeName = getType(*this);
 
-            if (m_registeredInstances.count(typeName))
+            if (registeredInstances_.count(typeName))
             {
-                auto& innerMap = m_registeredInstances.at(typeName);
+                auto& innerMap = registeredInstances_.at(typeName);
 
                 for (const auto& mapPair : innerMap)
                 {
@@ -251,10 +274,10 @@ public:
     template <class T, class TFactory>
     IocContainer& registerFactory(TFactory factory)
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const char* typeName = getType<T>();
-        m_registeredFactories.insert_or_assign(typeName, factory);
+        registeredFactories_.insert_or_assign(typeName, factory);
         return *this;
     }
 
@@ -265,10 +288,9 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindInstance(
-        value_wrapper<T> instance)
+    IocContainer& bindValue(value_wrapper<T> instance)
     {
-        return bindInstance<T>("", std::move(instance));
+        return bindValue<T>("", std::move(instance));
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -278,7 +300,7 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(T instance)
+    std::enable_if_t<!is_wrapped_v<T>, IocContainer&> bindValue(T instance)
     {
         return bindValue<T>("", std::move(instance));
     }
@@ -293,8 +315,23 @@ public:
     template <class T>
     IocContainer& bindInstance(std::reference_wrapper<T> instance)
     {
-        return bindInstance<T, T>("", instance);
+        return bindInstance<T>("", instance);
     }
+
+#if 0
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr)
+    /// @tparam T The type of the instance
+    /// @param[in] instance The instance to be held within the container
+    /// @returns Reference to the IocContainer, for chaining operations
+    // template <class T, typename std::enable_if_t<!is_wrapped_v<T>, T>* = nullptr>
+    template <class T>
+    IocContainer& bindInstance(T instance)
+    {
+        return bindInstance<T>("", std::move(instance));
+    }
+#endif
 
     /// Registers an instance for a given type. This version refers to the object and will
     /// not manage lifetime
@@ -358,39 +395,28 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    IocContainer& bindInstance(const std::string& name, value_wrapper<T> instance)
-    {
-        return bindValue(name, instance.move());
-    }
-
-    /// Registers an instance for a given type. This version performs a copy of the
-    /// object, using the copy
-    ///     constructor and will manage lifetime via the Holder (shared_ptr)
-    /// @tparam T The type of the instance
-    /// @param[in] name The name of the instance
-    /// @param[in] instance The instance to be held within the container
-    /// @returns Reference to the IocContainer, for chaining operations
-    template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
-        const std::string& name, T instance)
-    {
-        return bindInstance<T>(name, std::make_shared<T>(std::move(instance)));
-    }
-
-    /// Registers an instance for a given type. This version performs a copy of the
-    /// object, using the copy
-    ///     constructor and will manage lifetime via the Holder (shared_ptr)
-    /// @tparam T The type of the instance
-    /// @param[in] name The name of the instance
-    /// @param[in] instance The instance to be held within the container
-    /// @returns Reference to the IocContainer, for chaining operations
-    template <class T>
     IocContainer& bindInstance(const std::string& name,
                                std::reference_wrapper<T> instance)
     {
         return bindInstanceInternal<T>(name,
                                        HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
     }
+
+#if 0
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr)
+    /// @tparam T The type of the instance
+    /// @param[in] name The name of the instance
+    /// @param[in] instance The instance to be held within the container
+    /// @returns Reference to the IocContainer, for chaining operations
+    // template <class T, typename std::enable_if_t<!is_wrapped_v<T>, T>* = nullptr>
+    template <class T>
+    IocContainer& bindInstance(const std::string& name, T instance)
+    {
+        return bindValue(name, value_wrapper<T>{std::move(instance)});
+    }
+#endif
 
     /// Registers an instance for a given type. This version performs a copy of the
     /// object, using the copy
@@ -449,6 +475,34 @@ public:
         return bindInstanceInternal<T>(name, std::move(instance));
     }
 
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr)
+    /// @tparam T The type of the instance
+    /// @param[in] name The name of the instance
+    /// @param[in] instance The instance to be held within the container
+    /// @returns Reference to the IocContainer, for chaining operations
+    template <class T>
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
+        const std::string& name, value_wrapper<T> instance)
+    {
+        return bindValue(name, instance.move());
+    }
+
+    /// Registers an instance for a given type. This version performs a copy of the
+    /// object, using the copy
+    ///     constructor and will manage lifetime via the Holder (shared_ptr)
+    /// @tparam T The type of the instance
+    /// @param[in] name The name of the instance
+    /// @param[in] instance The instance to be held within the container
+    /// @returns Reference to the IocContainer, for chaining operations
+    template <class T>
+    std::enable_if_t<!is_wrapped_v<T>, IocContainer&> bindValue(const std::string& name,
+                                                                T instance)
+    {
+        return bindInstance<T>(name, std::make_shared<T>(std::move(instance)));
+    }
+
     /// Utility method to erase an existing instance from the container
     /// @tparam T The type of the instance
     /// @returns Reference to the IocContainer, for chaining operations
@@ -465,12 +519,12 @@ public:
     template <class T>
     IocContainer& eraseInstance(const std::string& name)
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const char* typeName = getType<T>();
-        auto iter = m_registeredInstances.find(typeName);
+        auto iter = registeredInstances_.find(typeName);
 
-        if (iter != m_registeredInstances.end())
+        if (iter != registeredInstances_.end())
         {
             auto innerIter = iter->second.find(name);
             if (innerIter != iter->second.end())
@@ -481,7 +535,7 @@ public:
                 // clean up by also removing the outer container
                 if (iter->second.size() == 0)
                 {
-                    m_registeredInstances.erase(iter);
+                    registeredInstances_.erase(iter);
                 }
             }
         }
@@ -513,15 +567,15 @@ public:
     {
         const char* typeName = getType<T>();
 
-        if (m_registeredFactories.count(typeName))
+        if (registeredFactories_.count(typeName))
         {
             // See if there is a factory that can create this object
-            const auto& holder = m_registeredFactories.at(typeName);
+            const auto& holder = registeredFactories_.at(typeName);
             Factory<T, TArgs...> factory = boost::any_cast<Factory<T, TArgs...>>(holder);
             return std::unique_ptr<T>(factory(args...));
         }
 
-        if (m_parent == nullptr)
+        if (parent_ == nullptr)
         {
             using boost::format;
             using boost::str;
@@ -532,7 +586,7 @@ public:
                                   << StringInfo(str(format(fmt) % getType<T>() % name)));
         }
 
-        return m_parent->createByNameWithoutStoring<T>(name, args...);
+        return parent_->createByNameWithoutStoring<T>(name, args...);
     }
 
     /// Creates an instance using a registered factory
@@ -559,16 +613,16 @@ public:
     {
         const char* typeName = getType<T>();
 
-        if (m_registeredFactories.count(typeName))
+        if (registeredFactories_.count(typeName))
         {
             // See if there is a factory that can create this object
-            const auto& holder = m_registeredFactories.at(typeName);
+            const auto& holder = registeredFactories_.at(typeName);
             SharedFactory<T, TArgs...> factory =
                 boost::any_cast<SharedFactory<T, TArgs...>>(holder);
             return std::shared_ptr<T>(factory(args...));
         }
 
-        if (m_parent == nullptr)
+        if (parent_ == nullptr)
         {
             using boost::format;
             using boost::str;
@@ -579,7 +633,7 @@ public:
                                   << StringInfo(str(format(fmt) % getType<T>() % name)));
         }
 
-        return m_parent->createByNameWithoutStoring<T>(name, args...);
+        return parent_->createByNameWithoutStoring<T>(name, args...);
     }
 
     /// Creates an instance using a registered factory
@@ -605,9 +659,9 @@ public:
     {
         const char* typeName = getType<T>();
 
-        if (m_registeredFactories.count(typeName))
+        if (registeredFactories_.count(typeName))
         {
-            const auto& holder = m_registeredFactories.at(typeName);
+            const auto& holder = registeredFactories_.at(typeName);
             const char* holderType = holder.type().name();
             const char* expectedHolderType = getType<SharedFactory<T, TArgs...>>();
 
@@ -628,7 +682,7 @@ public:
         }
         else
         {
-            if (m_parent == nullptr)
+            if (parent_ == nullptr)
             {
                 using boost::format;
                 using boost::str;
@@ -639,7 +693,7 @@ public:
                     IocException() << StringInfo(str(format(fmt) % getType<T>() % name)));
             }
 
-            m_parent->createByName<T>(name, args...);
+            parent_->createByName<T>(name, args...);
         }
 
         return *this;
@@ -662,13 +716,13 @@ public:
     template <class T>
     bool contains [[nodiscard]] (const std::string& name) const
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const std::string typeName = getType<T>();
 
-        auto iter = m_registeredInstances.find(typeName);
+        auto iter = registeredInstances_.find(typeName);
 
-        if (iter != m_registeredInstances.end())
+        if (iter != registeredInstances_.end())
         {
             const auto& innerInstanceMap = iter->second;
 
@@ -680,7 +734,7 @@ public:
             }
         }
 
-        return m_registeredFactories.count(typeName) > 0;
+        return registeredFactories_.count(typeName) > 0;
     }
 
     /// Returns a copy of the object from within the IOC container. This should only be
@@ -755,7 +809,7 @@ public:
         using boost::format;
         using boost::str;
 
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const auto item = find<T>(name);
 
@@ -867,10 +921,10 @@ private:
     template <class T>
     IocContainer& bindInstanceInternal(std::string name, HolderPtr<T> instance)
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const char* typeName = getType<T>();
-        auto& innerMap = m_registeredInstances[typeName];
+        auto& innerMap = registeredInstances_[typeName];
         innerMap.insert_or_assign(name, Holder(std::move(instance)));
         return *this;
     }
@@ -894,7 +948,7 @@ private:
     std::pair<bool, InnerRegisteredInstanceMap::iterator> find
         [[nodiscard]] (const std::string& name, bool checkFactory = true)
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         // Internally does a const_cast to maximize code reuse
         auto res = const_cast<const IocContainer*>(this)->find<T>(name, checkFactory);
@@ -908,15 +962,15 @@ private:
     std::pair<bool, InnerRegisteredInstanceMap::const_iterator> find
         [[nodiscard]] (const std::string& name, bool checkFactory = true) const
     {
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         auto result = std::make_pair(false, InnerRegisteredInstanceMap::const_iterator());
 
         const std::string typeName = getType<T>();
 
-        auto iter = m_registeredInstances.find(typeName);
+        auto iter = registeredInstances_.find(typeName);
 
-        if (iter != m_registeredInstances.end())
+        if (iter != registeredInstances_.end())
         {
             const auto& innerInstanceMap = iter->second;
 
@@ -928,7 +982,7 @@ private:
             }
         }
 
-        if (checkFactory && m_registeredFactories.count(typeName))
+        if (checkFactory && registeredFactories_.count(typeName))
         {
             // Attempt to create the object - Should throw if this also fails
             const_cast<IocContainer*>(this)->createByName<T>(name);
@@ -947,7 +1001,7 @@ private:
         using boost::format;
         using boost::str;
 
-        Lock lock(m_mutex);
+        Lock lock(mutex_);
 
         const auto item = find<T>(name);
 
@@ -979,16 +1033,16 @@ private:
     }
 
     // Pointer to the parent container
-    IocContainer* m_parent;
+    IocContainer* parent_;
 
     // Container of registered factories
-    RegisteredFactories m_registeredFactories;
+    RegisteredFactories registeredFactories_;
 
     // Container of registered instances
-    RegisteredInstances m_registeredInstances;
+    RegisteredInstances registeredInstances_;
 
     // Keeps the container thread-safe
-    mutable Mutex m_mutex;
+    mutable Mutex mutex_;
 };
 
 //----------------------------------------------------------------------------------------------------------------------

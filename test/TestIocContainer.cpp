@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE(checkUnnamedConstruction)
     const char* v3 = "HELLO";
     string v4 = "GOODBYE";
 
-    iocContainer.bindInstance(val(v1)).bindInstance(val(v2)).bindInstance(v3).bindInstance(
+    iocContainer.bindValue(val(v1)).bindValue(val(v2)).bindInstance(v3).bindValue(
         val(v4));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 4);
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(checkSubContainerConstruction)
     iocContainer.bindInstance("sub1", ref(subContainer1))
         .bindInstance("sub2", ref(subContainer2))
         .bindInstance("sub3", ref(subContainer3))
-        .bindInstance("int", val(3));
+        .bindValue("int", val(3));
 
     BOOST_CHECK_EQUAL(iocContainer.size(), 4);
     BOOST_CHECK(iocContainer.contains<IocContainer>("sub1"));
@@ -185,7 +185,7 @@ BOOST_AUTO_TEST_CASE(testIocContainerInThread)
 
     IocContainer subIocContainer;
     iocContainer.bindInstance(testFactory, ref(subIocContainer));
-    subIocContainer.bindInstance("ip", val(ip)).bindInstance("port", val(port));
+    subIocContainer.bindValue("ip", val(ip)).bindValue("port", val(port));
 
     auto testInThread = [this, &subIocContainer]() {
         BOOST_CHECK(iocContainer.contains<IocContainer>(testFactory));
@@ -206,12 +206,12 @@ BOOST_AUTO_TEST_CASE(testIocContainerFactory)
     std::string str;
 
     iocContainer.getRef<IocContainer>("sub1")
-        .bindInstance<int>("3", val(3))
-        .bindInstance<char>("a", val('a'))
-        .bindInstance<char>("b", val('b'));
+        .bindValue<int>("3", val(3))
+        .bindValue<char>("a", val('a'))
+        .bindValue<char>("b", val('b'));
     iocContainer.getRef<IocContainer>("sub2")
-        .bindInstance<int>("4", val(4))
-        .bindInstance<char>("z", val('z'))
+        .bindValue<int>("4", val(4))
+        .bindValue<char>("z", val('z'))
         .bindValue<int>("5", 5)
         .bindInstance<std::string>(ref(str));
 
@@ -508,7 +508,7 @@ BOOST_AUTO_TEST_CASE(testMoveInstance)
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
         // Do a bind instance where the container takes ownership of the object
-        iocContainer.bindInstance(mval(a1));
+        iocContainer.bindValue(mval(a1));
     }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
@@ -523,7 +523,7 @@ BOOST_AUTO_TEST_CASE(testReBindInstance)
         BOOST_CHECK_EQUAL(objTracker.size(), 1);
 
         // Do a bind instance where the container takes ownership of the object
-        iocContainer.bindInstance(mval(a1));
+        iocContainer.bindValue(mval(a1));
     }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
@@ -534,7 +534,7 @@ BOOST_AUTO_TEST_CASE(testReBindInstance)
     {
         IntWrapper a2{4, objTracker};
 
-        iocContainer.bindInstance(mval(a2));
+        iocContainer.bindValue(mval(a2));
     }
 
     BOOST_CHECK_EQUAL(objTracker.size(), 1);
