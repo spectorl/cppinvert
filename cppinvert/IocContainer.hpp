@@ -571,7 +571,36 @@ public:
         {
             // See if there is a factory that can create this object
             const auto& holder = registeredFactories_.at(typeName);
-            Factory<T, TArgs...> factory = boost::any_cast<Factory<T, TArgs...>>(holder);
+            const char* holderType = holder.type().name();
+
+            const char* expectedHolderType = getType<Factory<T, TArgs...>>();
+            const char* sharedHolderType = getType<SharedFactory<T, TArgs...>>();
+
+            if (holderType == sharedHolderType)
+            {
+                using boost::format;
+                using boost::str;
+                static const format fmt(
+                    "Shared factory cannot return a unique ptr, "
+                    "please use createByNameWithoutStoringShared instead."
+                    "Expected Factory = %1%, Actual = %2%");
+                BOOST_THROW_EXCEPTION(IocException()
+                                      << StringInfo(str(format(fmt) % expectedHolderType %
+                                                        sharedHolderType)));
+            }
+            else if (holderType != expectedHolderType)
+            {
+                using boost::format;
+                using boost::str;
+                static const format fmt("Registered factory is of an unknown signature. "
+                                        "Please verify signature."
+                                        "Expected Factory = %1%, Actual = %2%");
+                BOOST_THROW_EXCEPTION(
+                    IocException()
+                    << StringInfo(str(format(fmt) % expectedHolderType % holderType)));
+            }
+
+            auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
             return std::unique_ptr<T>(factory(args...));
         }
 
@@ -617,9 +646,21 @@ public:
         {
             // See if there is a factory that can create this object
             const auto& holder = registeredFactories_.at(typeName);
-            SharedFactory<T, TArgs...> factory =
-                boost::any_cast<SharedFactory<T, TArgs...>>(holder);
-            return std::shared_ptr<T>(factory(args...));
+            const char* holderType = holder.type().name();
+
+            const char* expectedHolderType = getType<SharedFactory<T, TArgs...>>();
+            const char* uniqueHolderType = getType<Factory<T, TArgs...>>();
+
+            if (holderType == uniqueHolderType)
+            {
+                auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
+                return std::move(factory(args...));
+            }
+            else
+            {
+                auto factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
+                return factory(args...);
+            }
         }
 
         if (parent_ == nullptr)
