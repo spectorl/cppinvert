@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include <boost/any.hpp>
+#include <boost/core/demangle.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/core/null_deleter.hpp>
 #include <boost/exception/all.hpp>
@@ -55,7 +56,7 @@ public:
     /// Constructor which moves the value to a local member, to be moved later
     template <typename std::enable_if_t<!is_reference_wrapper_v<T>, T>* = nullptr>
     explicit value_wrapper(T&& val)
-        : value_(val)
+        : value_(std::forward<T>(val))
     {
     }
 
@@ -147,11 +148,11 @@ class IocContainer : private boost::noncopyable
 public:
     /// Definition for a shared factory function for creating objects
     template <class T, class... TArgs>
-    using SharedFactory = std::function<std::shared_ptr<T>(TArgs...)>;
+    using SharedFactory = std::function<std::shared_ptr<T>(std::decay_t<TArgs>...)>;
 
     /// Definition for a factory function for creating objects
     template <class T, class... TArgs>
-    using Factory = std::function<std::unique_ptr<T>(TArgs...)>;
+    using Factory = std::function<std::unique_ptr<T>(std::decay_t<TArgs>...)>;
 
     /// Creates the IOC container and also defaults to registering a factory of an
     /// IOC container, so that sub-containers may be created upon request
@@ -175,7 +176,7 @@ public:
 
     /// Move constructor
     /// @param other The IOC container to take resources from
-    IocContainer(IocContainer&& other)
+    IocContainer(IocContainer&& other) noexcept
         : parent_(std::move(other.parent_))
         , registeredFactories_(std::move(other.registeredFactories_))
         , registeredInstances_(std::move(other.registeredInstances_))
@@ -188,7 +189,7 @@ public:
     {
     }
 
-    IocContainer& operator=(IocContainer&& other)
+    IocContainer& operator=(IocContainer&& other) noexcept
     {
         if (this == &other)
         {
@@ -225,7 +226,7 @@ public:
 
         if (recursive)
         {
-            const char* typeName = getType(*this);
+            auto typeName = getType(*this);
 
             if (registeredInstances_.count(typeName))
             {
@@ -276,7 +277,7 @@ public:
     {
         Lock lock(mutex_);
 
-        const char* typeName = getType<T>();
+        auto typeName = getType<T>();
         registeredFactories_.insert_or_assign(typeName, factory);
         return *this;
     }
@@ -341,10 +342,9 @@ public:
     /// @tparam TDerived The type of the instance
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
-    template <
-        class TBase,
-        class TDerived,
-        typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
+    template <class TBase,
+              class TDerived,
+              typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
     IocContainer& bindInstance(std::reference_wrapper<TDerived> instance)
     {
         return bindInstance<TBase, TDerived>("", instance);
@@ -395,11 +395,9 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    IocContainer& bindInstance(const std::string& name,
-                               std::reference_wrapper<T> instance)
+    IocContainer& bindInstance(const std::string& name, std::reference_wrapper<T> instance)
     {
-        return bindInstanceInternal<T>(name,
-                                       HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
+        return bindInstanceInternal<T>(name, HolderPtr<T>{&instance.get(), nullDeleter_v<T>});
     }
 
 #if 0
@@ -426,15 +424,13 @@ public:
     /// @param[in] name The name of the instance
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
-    template <
-        class TBase,
-        class TDerived,
-        typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
-    IocContainer& bindInstance(const std::string& name,
-                               std::reference_wrapper<TDerived> instance)
+    template <class TBase,
+              class TDerived,
+              typename std::enable_if_t<!std::is_same_v<TBase, TDerived>, TDerived>* = nullptr>
+    IocContainer& bindInstance(const std::string& name, std::reference_wrapper<TDerived> instance)
     {
-        return bindInstanceInternal<TBase>(
-            name, HolderPtr<TBase>{&instance.get(), nullDeleter_v<TBase>});
+        return bindInstanceInternal<TBase>(name,
+                                           HolderPtr<TBase>{&instance.get(), nullDeleter_v<TBase>});
     }
 
     /// Registers an instance for a given type. This version performs a copy of the
@@ -483,8 +479,8 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(
-        const std::string& name, value_wrapper<T> instance)
+    std::enable_if_t<!is_reference_wrapper_v<T>, IocContainer&> bindValue(const std::string& name,
+                                                                          value_wrapper<T> instance)
     {
         return bindValue(name, instance.move());
     }
@@ -497,8 +493,7 @@ public:
     /// @param[in] instance The instance to be held within the container
     /// @returns Reference to the IocContainer, for chaining operations
     template <class T>
-    std::enable_if_t<!is_wrapped_v<T>, IocContainer&> bindValue(const std::string& name,
-                                                                T instance)
+    std::enable_if_t<!is_wrapped_v<T>, IocContainer&> bindValue(const std::string& name, T instance)
     {
         return bindInstance<T>(name, std::make_shared<T>(std::move(instance)));
     }
@@ -521,7 +516,7 @@ public:
     {
         Lock lock(mutex_);
 
-        const char* typeName = getType<T>();
+        auto typeName = getType<T>();
         auto iter = registeredInstances_.find(typeName);
 
         if (iter != registeredInstances_.end())
@@ -550,7 +545,7 @@ public:
     /// no factory
     ///     registered to create it
     template <class T, class... TArgs>
-    std::unique_ptr<T> createWithoutStoring [[nodiscard]] (TArgs... args)
+    std::unique_ptr<T> createWithoutStoring [[nodiscard]] (TArgs&&... args)
     {
         return createByNameWithoutStoring<T>("", std::forward<TArgs>(args)...);
     }
@@ -563,59 +558,53 @@ public:
     ///     registered to create it
     template <class T, class... TArgs>
     std::unique_ptr<T> createByNameWithoutStoring
-        [[nodiscard]] (const std::string& name, TArgs... args)
+        [[nodiscard]] (const std::string& name, TArgs&&... args)
     {
-        const char* typeName = getType<T>();
+        using boost::format;
+        using boost::str;
+
+        auto typeName = getType<T>();
 
         if (registeredFactories_.count(typeName))
         {
             // See if there is a factory that can create this object
             const auto& holder = registeredFactories_.at(typeName);
-            const char* holderType = holder.type().name();
+            auto holderType = boost::core::demangle(holder.type().name());
 
-            const char* expectedHolderType = getType<Factory<T, TArgs...>>();
-            const char* sharedHolderType = getType<SharedFactory<T, TArgs...>>();
+            auto expectedHolderType = getType<Factory<T, TArgs...>>();
+            auto sharedHolderType = getType<SharedFactory<T, TArgs...>>();
 
             if (holderType == sharedHolderType)
             {
-                using boost::format;
-                using boost::str;
-                static const format fmt(
-                    "Shared factory cannot return a unique ptr, "
-                    "please use createByNameWithoutStoringShared instead."
-                    "Expected Factory = %1%, Actual = %2%");
-                BOOST_THROW_EXCEPTION(IocException()
-                                      << StringInfo(str(format(fmt) % expectedHolderType %
-                                                        sharedHolderType)));
+                static const format fmt("Shared factory cannot return a unique ptr, "
+                                        "please use createByNameWithoutStoringShared instead."
+                                        "\n\tExpected Factory: %1%\n\tActual Factory  : %2%");
+                BOOST_THROW_EXCEPTION(IocException() << StringInfo(str(
+                                          format(fmt) % expectedHolderType % sharedHolderType)));
             }
             else if (holderType != expectedHolderType)
             {
-                using boost::format;
-                using boost::str;
                 static const format fmt("Registered factory is of an unknown signature. "
                                         "Please verify signature."
-                                        "Expected Factory = %1%, Actual = %2%");
-                BOOST_THROW_EXCEPTION(
-                    IocException()
-                    << StringInfo(str(format(fmt) % expectedHolderType % holderType)));
+                                        "\n\tExpected Factory: %1%\n\tActual Factory  : %2%");
+                BOOST_THROW_EXCEPTION(IocException() << StringInfo(
+                                          str(format(fmt) % expectedHolderType % holderType)));
             }
 
             auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
-            return std::unique_ptr<T>(factory(args...));
+            return std::unique_ptr<T>(factory(std::forward<TArgs>(args)...));
         }
 
         if (parent_ == nullptr)
         {
-            using boost::format;
-            using boost::str;
             static const format fmt("No registered factory exists which can create "
                                     "this object. "
-                                    "Expected Holder Type = %1%, Name = %2%");
+                                    "\n\tExpected Holder Type:  %1%\n\tName                : %2%");
             BOOST_THROW_EXCEPTION(IocException()
                                   << StringInfo(str(format(fmt) % getType<T>() % name)));
         }
 
-        return parent_->createByNameWithoutStoring<T>(name, args...);
+        return parent_->createByNameWithoutStoring<T>(name, std::forward<TArgs>(args)...);
     }
 
     /// Creates an instance using a registered factory
@@ -625,7 +614,7 @@ public:
     /// no factory
     ///     registered to create it
     template <class T, class... TArgs>
-    std::shared_ptr<T> createWithoutStoringShared [[nodiscard]] (TArgs... args)
+    std::shared_ptr<T> createWithoutStoringShared [[nodiscard]] (TArgs&&... args)
     {
         return createByNameWithoutStoringShared<T>("", std::forward<TArgs>(args)...);
     }
@@ -638,43 +627,44 @@ public:
     ///     registered to create it
     template <class T, class... TArgs>
     std::shared_ptr<T> createByNameWithoutStoringShared
-        [[nodiscard]] (const std::string& name, TArgs... args)
+        [[nodiscard]] (const std::string& name, TArgs&&... args)
     {
-        const char* typeName = getType<T>();
+        using boost::format;
+        using boost::str;
+
+        auto typeName = getType<T>();
 
         if (registeredFactories_.count(typeName))
         {
             // See if there is a factory that can create this object
             const auto& holder = registeredFactories_.at(typeName);
-            const char* holderType = holder.type().name();
+            auto holderType = boost::core::demangle(holder.type().name());
 
-            const char* expectedHolderType = getType<SharedFactory<T, TArgs...>>();
-            const char* uniqueHolderType = getType<Factory<T, TArgs...>>();
+            auto expectedHolderType = getType<SharedFactory<T, TArgs...>>();
+            std::string uniqueHolderType = getType<Factory<T, TArgs...>>();
 
             if (holderType == uniqueHolderType)
             {
                 auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
-                return std::move(factory(args...));
+                return std::move(factory(std::forward<TArgs>(args)...));
             }
             else
             {
                 auto factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
-                return factory(args...);
+                return factory(std::forward<TArgs>(args)...);
             }
         }
 
         if (parent_ == nullptr)
         {
-            using boost::format;
-            using boost::str;
             static const format fmt("No registered factory exists which can create "
                                     "this object. "
-                                    "Expected Holder Type = %1%, Name = %2%");
+                                    "\n\tExpected Holder Type:  %1%\n\tName                : %2%");
             BOOST_THROW_EXCEPTION(IocException()
                                   << StringInfo(str(format(fmt) % getType<T>() % name)));
         }
 
-        return parent_->createByNameWithoutStoring<T>(name, args...);
+        return parent_->createByNameWithoutStoring<T>(name, std::forward<TArgs>(args)...);
     }
 
     /// Creates an instance using a registered factory
@@ -684,9 +674,9 @@ public:
     /// no factory
     ///     registered to create it
     template <class T, class... TArgs>
-    IocContainer& create(TArgs... args)
+    IocContainer& create(TArgs&&... args)
     {
-        return createByName<T>("", args...);
+        return createByName<T>("", std::forward<TArgs>(args)...);
     }
 
     /// Creates an instance using a registered factory and assign it the specified name
@@ -696,27 +686,30 @@ public:
     /// no factory
     ///     registered to create it
     template <class T, class... TArgs>
-    IocContainer& createByName(const std::string& name, TArgs... args)
+    IocContainer& createByName(const std::string& name, TArgs&&... args)
     {
-        const char* typeName = getType<T>();
+        using boost::format;
+        using boost::str;
+
+        auto typeName = getType<T>();
 
         if (registeredFactories_.count(typeName))
         {
             const auto& holder = registeredFactories_.at(typeName);
-            const char* holderType = holder.type().name();
-            const char* expectedHolderType = getType<SharedFactory<T, TArgs...>>();
+            auto holderType = boost::core::demangle(holder.type().name());
+            auto expectedHolderType = getType<SharedFactory<T, TArgs...>>();
 
             if (holderType == expectedHolderType)
             {
                 auto factory = boost::any_cast<SharedFactory<T, TArgs...>>(holder);
-                std::shared_ptr<T> inst(factory(args...));
+                std::shared_ptr<T> inst(factory(std::forward<TArgs>(args)...));
                 // See if there is a factory that can create this object
                 bindInstance(name, std::move(inst));
             }
             else
             {
                 auto factory = boost::any_cast<Factory<T, TArgs...>>(holder);
-                std::unique_ptr<T> inst(factory(args...));
+                std::unique_ptr<T> inst(factory(std::forward<TArgs>(args)...));
                 // See if there is a factory that can create this object
                 bindInstance(name, std::move(inst));
             }
@@ -725,16 +718,15 @@ public:
         {
             if (parent_ == nullptr)
             {
-                using boost::format;
-                using boost::str;
-                static const format fmt("No registered factory exists which can create "
-                                        "this object. "
-                                        "Expected Holder Type = %1%, Name = %2%");
-                BOOST_THROW_EXCEPTION(
-                    IocException() << StringInfo(str(format(fmt) % getType<T>() % name)));
+                static const format fmt(
+                    "No registered factory exists which can create "
+                    "this object. "
+                    "\n\tExpected Holder Type:  %1%\n\tName                : %2%");
+                BOOST_THROW_EXCEPTION(IocException()
+                                      << StringInfo(str(format(fmt) % getType<T>() % name)));
             }
 
-            parent_->createByName<T>(name, args...);
+            parent_->createByName<T>(name, std::forward<TArgs>(args)...);
         }
 
         return *this;
@@ -759,7 +751,7 @@ public:
     {
         Lock lock(mutex_);
 
-        const std::string typeName = getType<T>();
+        const auto typeName = getType<T>();
 
         auto iter = registeredInstances_.find(typeName);
 
@@ -854,20 +846,20 @@ public:
 
         const auto item = find<T>(name);
 
-        const char* expectedHolderType = getType<HolderPtr<T>>();
+        auto expectedHolderType = getType<HolderPtr<T>>();
 
         if (!item.first)
         {
-            static const format fmt("Item not found by type and name. Expected Holder "
-                                    "Type = %1%, Name = %2%");
-            BOOST_THROW_EXCEPTION(IocException() << StringInfo(
-                                      str(format(fmt) % expectedHolderType % name)));
+            static const format fmt("Item not found by type and name. \n\tExpected "
+                                    "Holder Type:  %1%\n\tName                : %2%");
+            BOOST_THROW_EXCEPTION(IocException()
+                                  << StringInfo(str(format(fmt) % expectedHolderType % name)));
         }
 
         auto innerIter = item.second;
 
         const Holder& holder = innerIter->second;
-        const char* holderType = holder.type().name();
+        auto holderType = boost::core::demangle(holder.type().name());
 
         if (holderType == expectedHolderType)
         {
@@ -876,8 +868,8 @@ public:
 
         static const format fmt("Holder type doesn't match expected holder type %1% != "
                                 "%2%");
-        BOOST_THROW_EXCEPTION(IocException() << StringInfo(
-                                  str(format(fmt) % holderType % expectedHolderType)));
+        BOOST_THROW_EXCEPTION(IocException()
+                              << StringInfo(str(format(fmt) % holderType % expectedHolderType)));
     }
 
     /// Returns a pointer to the object from within the IOC container. You should NOT
@@ -945,8 +937,7 @@ private:
     using HolderPtr = std::shared_ptr<T>;
 
     using InnerRegisteredInstanceMap = std::unordered_map<std::string, Holder>;
-    using RegisteredInstances =
-        std::unordered_map<std::string, InnerRegisteredInstanceMap>;
+    using RegisteredInstances = std::unordered_map<std::string, InnerRegisteredInstanceMap>;
 
     using Mutex = std::recursive_mutex;
     using Lock = std::unique_lock<Mutex>;
@@ -964,22 +955,22 @@ private:
     {
         Lock lock(mutex_);
 
-        const char* typeName = getType<T>();
-        auto& innerMap = registeredInstances_[typeName];
+        auto typeName = getType<T>();
+        auto& innerMap = registeredInstances_[std::move(typeName)];
         innerMap.insert_or_assign(name, Holder(std::move(instance)));
         return *this;
     }
 
     // Helper to get types in a consistent way
     template <class T>
-    const char* getType [[nodiscard]] () const
+    std::string getType [[nodiscard]] () const
     {
-        return typeid(std::decay_t<T>).name();
+        return boost::core::demangle(typeid(std::decay_t<T>).name());
     }
 
     // Helper to get types in a consistent way
     template <class T>
-    const char* getType [[nodiscard]] (const T&) const
+    std::string getType [[nodiscard]] (const T&) const
     {
         return getType<T>();
     }
@@ -994,8 +985,8 @@ private:
         // Internally does a const_cast to maximize code reuse
         auto res = const_cast<const IocContainer*>(this)->find<T>(name, checkFactory);
 
-        return std::make_pair(
-            res.first, const_cast<InnerRegisteredInstanceMap::iterator>(res.second));
+        return std::make_pair(res.first,
+                              const_cast<InnerRegisteredInstanceMap::iterator>(res.second));
     }
 
     // Internal helper method for finding the registered instance
@@ -1007,7 +998,7 @@ private:
 
         auto result = std::make_pair(false, InnerRegisteredInstanceMap::const_iterator());
 
-        const std::string typeName = getType<T>();
+        const auto typeName = getType<T>();
 
         auto iter = registeredInstances_.find(typeName);
 
@@ -1046,21 +1037,21 @@ private:
 
         const auto item = find<T>(name);
 
-        const char* expectedHolderType = getType<HolderPtr<T>>();
+        auto expectedHolderType = getType<HolderPtr<T>>();
 
         if (!item.first)
         {
-            static const format fmt("Item not found by type and name. Expected Holder "
-                                    "Type = %1%, Name = %2%");
-            BOOST_THROW_EXCEPTION(IocException() << StringInfo(
-                                      str(format(fmt) % expectedHolderType % name)));
+            static const format fmt("Item not found by type and name. \n\tExpected "
+                                    "Holder Type:  %1%\n\tName                : %2%");
+            BOOST_THROW_EXCEPTION(IocException()
+                                  << StringInfo(str(format(fmt) % expectedHolderType % name)));
         }
 
         auto innerIter = item.second;
 
         const Holder& holder = innerIter->second;
 
-        const char* holderType = holder.type().name();
+        auto holderType = boost::core::demangle(holder.type().name());
 
         if (holderType == expectedHolderType)
         {
@@ -1069,8 +1060,8 @@ private:
 
         static const format fmt("Holder type doesn't match expected holder type %1% != "
                                 "%2%");
-        BOOST_THROW_EXCEPTION(IocException() << StringInfo(
-                                  str(format(fmt) % holderType % expectedHolderType)));
+        BOOST_THROW_EXCEPTION(IocException()
+                              << StringInfo(str(format(fmt) % holderType % expectedHolderType)));
     }
 
     // Pointer to the parent container
